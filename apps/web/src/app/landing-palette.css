@@ -1,0 +1,96 @@
+/* Light brand surfaces, scoped to the landing page rather than the app UI. */
+.marketing-site {
+  --landing-purple: #6241bb;
+  --landing-purple-ink: #302641;
+  --landing-purple-muted: #62586f;
+  --landing-purple-border: #d8ccee;
+  --landing-green: #18794e;
+  --landing-green-ink: #244536;
+  --landing-green-muted: #526a5b;
+  --landing-green-border: #c8e4d0;
+}
+
+/* Insights feature: mint shell, white metric card, emerald growth accents. */
+.marketing-site .feature-dark {
+  color: var(--landing-green-ink);
+  background: var(--mint);
+}
+.marketing-site .feature-dark h3 { color: var(--landing-green-ink); }
+.marketing-site .feature-dark p,
+.marketing-site .feature-dark .feature-number { color: var(--landing-green-muted); }
+.marketing-site .feature-dark a { color: var(--landing-green); }
+.marketing-site .feature-dark a:hover { color: #105936; }
+.marketing-site .metric-mock {
+  background: #fff;
+  border-color: var(--landing-green-border);
+  box-shadow: 0 12px 28px #18794e0a;
+}
+.marketing-site .metric-mock > small { color: var(--landing-green-muted); }
+.marketing-site .metric-mock > strong { color: var(--landing-green-ink); }
+.marketing-site .metric-mock > span { color: var(--landing-green); }
+.marketing-site .metric-mock .mini-bars i {
+  background: linear-gradient(0deg, #2f9765, #86d993);
+}
+.marketing-site .metric-mock.growth-scene > .growth-scene-caption {
+  color: var(--landing-green-muted);
+}
+
+/* Results panel: no dark block; retain strong, readable animated figures. */
+.marketing-site .proof-stats {
+  background: #e6f7e9;
+  color: var(--landing-green-ink);
+}
+.marketing-site .proof-stats > div { border-color: var(--landing-green-border); }
+.marketing-site .proof-stats strong { color: var(--landing-green); }
+.marketing-site .proof-stats > div > span { color: var(--landing-green-muted); }
+.marketing-site .proof-stats .proof-growth-track { background: #c8e4d0; }
+.marketing-site .proof-stats .proof-growth-track i {
+  background: linear-gradient(90deg, #7558d9, #2f9765);
+}
+.marketing-site .proof-stats > .growth-scene-caption { color: var(--landing-green-muted); }
+
+/* Featured plan: lavender surface with a clear purple action. */
+.marketing-site .pricing-card-featured {
+  color: var(--landing-purple-ink);
+  background: var(--lavender);
+  border-color: var(--landing-purple-border);
+  box-shadow: 0 22px 42px #7558d916;
+}
+.marketing-site .pricing-card-featured p,
+.marketing-site .pricing-card-featured > small,
+.marketing-site .pricing-card-featured .price span { color: var(--landing-purple-muted); }
+.marketing-site .pricing-card-featured .pricing-button {
+  color: #fff;
+  background: var(--landing-purple);
+  border-color: var(--landing-purple);
+}
+.marketing-site .pricing-card-featured .pricing-button:hover {
+  background: #51339e;
+  border-color: #51339e;
+}
+.marketing-site .pricing-card-featured .pricing-button:focus-visible {
+  outline: 3px solid var(--landing-purple);
+  outline-offset: 4px;
+}
+.marketing-site .pricing-card-featured ul { border-color: var(--landing-purple-border); }
+.marketing-site .pricing-card-featured li { color: var(--landing-purple-ink); }
+.marketing-site .pricing-card-featured li::before {
+  color: var(--landing-green);
+  background: #d3f0d6;
+}
+
+/* Analytics showcase: lavender surrounds a clean, white dashboard. */
+.marketing-site .insight-showcase {
+  color: var(--landing-purple-ink);
+  background: #f0ebff;
+}
+.marketing-site .insight-copy h2 { color: var(--landing-purple-ink); }
+.marketing-site .insight-copy .eyebrow,
+.marketing-site .insight-copy b { color: var(--landing-purple); }
+.marketing-site .insight-copy > p,
+.marketing-site .insight-copy li span { color: var(--landing-purple-muted); }
+.marketing-site .insight-copy ul { border-color: var(--landing-purple-border); }
+.marketing-site .insight-dashboard {
+  border-color: #e0d6f1;
+  box-shadow: 0 25px 48px #7558d916;
+}

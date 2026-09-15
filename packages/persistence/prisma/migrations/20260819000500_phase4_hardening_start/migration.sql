@@ -1,0 +1,12 @@
+CREATE TABLE "phase4_security_finding" ("id" UUID PRIMARY KEY, "workspace_id" UUID NULL, "title" TEXT NOT NULL, "severity" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'open', "owner" TEXT NULL, "review_at" TIMESTAMPTZ NULL, "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(), "closed_at" TIMESTAMPTZ NULL);
+CREATE INDEX "phase4_security_finding_status_severity_idx" ON "phase4_security_finding"("status","severity","created_at");
+CREATE TABLE "phase4_launch_evidence" ("id" UUID PRIMARY KEY, "area" TEXT NOT NULL, "status" TEXT NOT NULL, "summary" TEXT NOT NULL, "approver" TEXT NULL, "recorded_at" TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX "phase4_launch_evidence_area_idx" ON "phase4_launch_evidence"("area","status","recorded_at");
+CREATE TABLE "phase4_pilot_stop_signal" ("id" UUID PRIMARY KEY, "code" TEXT NOT NULL, "detail" TEXT NOT NULL, "active" BOOLEAN NOT NULL DEFAULT true, "observed_at" TIMESTAMPTZ NOT NULL DEFAULT now(), "cleared_at" TIMESTAMPTZ NULL);
+CREATE INDEX "phase4_pilot_stop_signal_active_idx" ON "phase4_pilot_stop_signal"("active","observed_at");
+CREATE TABLE "phase4_pilot_state" ("id" TEXT PRIMARY KEY, "stage" INTEGER NOT NULL DEFAULT 0, "state" TEXT NOT NULL DEFAULT 'locked', "started_at" TIMESTAMPTZ NULL, "completed_at" TIMESTAMPTZ NULL, "hold_reason" TEXT NULL, "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now());
+INSERT INTO "phase4_pilot_state" ("id") VALUES ('release1') ON CONFLICT DO NOTHING;
+CREATE TABLE "phase4_capacity_evidence" ("id" UUID PRIMARY KEY, "scenario" TEXT NOT NULL, "started_at" TIMESTAMPTZ NOT NULL, "finished_at" TIMESTAMPTZ NOT NULL, "target" DOUBLE PRECISION NOT NULL, "achieved" DOUBLE PRECISION NOT NULL, "error_rate" DOUBLE PRECISION NOT NULL, "safe_ceiling" DOUBLE PRECISION NOT NULL, "passed" BOOLEAN NOT NULL, "notes" TEXT NULL);
+CREATE TABLE "phase4_recovery_exercise" ("id" UUID PRIMARY KEY, "scenario" TEXT NOT NULL, "status" TEXT NOT NULL, "started_at" TIMESTAMPTZ NULL, "finished_at" TIMESTAMPTZ NULL, "rpo_minutes" INTEGER NULL, "rto_minutes" INTEGER NULL, "evidence_json" JSONB NOT NULL);
+CREATE TABLE "phase4_privacy_deletion_job" ("id" UUID PRIMARY KEY, "workspace_id" UUID NOT NULL, "profile_id" UUID NOT NULL, "state" TEXT NOT NULL, "requested_at" TIMESTAMPTZ NOT NULL DEFAULT now(), "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now(), "tombstone_hash" TEXT NULL, "error" TEXT NULL);
+CREATE INDEX "phase4_privacy_deletion_job_profile_idx" ON "phase4_privacy_deletion_job"("workspace_id","profile_id","state");

@@ -1,0 +1,6 @@
+{
+  "name": "@email-platform/public-api",
+  "version": "0.0.1-phase0",
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,4 @@
+export type CapacityScenario4='csv_import'|'event_burst'|'flow_entry_burst'|'due_waits'|'concurrent_sends'|'feedback_burst'|'database_pressure'|'object_store_failure';
+export const requiredCapacityScenarios4:CapacityScenario4[]=['csv_import','event_burst','flow_entry_burst','due_waits','concurrent_sends','feedback_burst','database_pressure','object_store_failure'];
+export interface CapacityEvidence4{id:string;scenario:CapacityScenario4;startedAt:Date;finishedAt:Date;target:number;achieved:number;errorRate:number;safeCeiling:number;passed:boolean;notes?:string}
+export function validateCapacityEvidence4(e:CapacityEvidence4){if(e.target<=0||e.achieved<0||e.safeCeiling<0)throw new Error('CAPACITY_VALUE_INVALID');if(e.errorRate<0||e.errorRate>1)throw new Error('CAPACITY_ERROR_RATE_INVALID');if(e.safeCeiling>e.achieved)throw new Error('SAFE_CEILING_EXCEEDS_OBSERVED');return e}

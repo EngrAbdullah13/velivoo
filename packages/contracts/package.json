@@ -1,0 +1,6 @@
+{
+  "name": "@email-platform/contracts",
+  "version": "0.1.0-phase1",
+  "private": true,
+  "type": "module"
+}

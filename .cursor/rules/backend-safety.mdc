@@ -1,0 +1,15 @@
+---
+description: Tenant, delivery, persistence and queue safety
+globs: apps/api/**,apps/public-api/**,apps/worker/**,apps/scheduler/**,packages/application/**,packages/persistence/**,packages/queue/**
+alwaysApply: false
+---
+
+Read the relevant handoff chapter and executing route, not only a similarly named legacy handler.
+Authenticate AND authorize workspace membership/permission for every query/mutation; tenant admins are not global platform admins.
+Preserve immutable email/flow versions, consent evidence, protected suppression, provider IDs and historical route authority.
+Persist supported feedback before acknowledgement; validate SNS topic/signature. Never trust event tags to select a tenant.
+Use exclusive claims/ownership for external submissions and scheduled work. Intent dedupe alone is not exactly-once sending. Never blindly retry unknown SES submissions.
+Use valid stable BullMQ IDs and test actual PG/Redis concurrency. Keep action types partitioned between workers.
+Inspect SQL constraints as well as Prisma schema before migrations. Preserve unrelated changes and historical data.
+Fail closed for production secret/config gaps; customer-safe errors with server-side correlation.
+

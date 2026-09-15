@@ -1,0 +1,12 @@
+---
+description: Velivoo project context, evidence hierarchy and safe continuation
+alwaysApply: true
+---
+
+Read CURSOR_PROJECT_CONTEXT.md first, then the relevant docs/cursor-handoff chapter and current source. Evidence order: executable code, schema/migrations, tests, current docs, master context, handoff, historical comments.
+Audit existing services/adapters before adding abstractions; do not create parallel sending, audience or automation systems.
+Distinguish proof, real code and externally verified production behavior. Proof runtime can use real AWS when flags enable it.
+Preserve tenant authorization, immutable published versions, protected suppression, durable inbox/outbox and unknown-submission safeguards.
+Never copy credentials/signing secrets into prompts, docs, client env or logs. Do not run migrations, destructive data operations or AWS resource changes merely to inspect behavior.
+Document source-backed conflicts and unknowns; passing tests/gates are not production certification.
+

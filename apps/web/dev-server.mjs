@@ -1,0 +1,5 @@
+import { createServer } from "node:http";
+import { readFile, stat } from "node:fs/promises";
+import { extname, join, normalize } from "node:path";
+const root=new URL("./public/",import.meta.url).pathname;const port=Number(process.env.EMAIL_PLATFORM_WEB_PORT??3000);const types={".html":"text/html; charset=utf-8",".css":"text/css; charset=utf-8",".js":"text/javascript; charset=utf-8",".json":"application/json"};
+createServer(async(req,res)=>{try{let pathname=decodeURIComponent(new URL(req.url??"/",`http://${req.headers.host??"localhost"}`).pathname);if(pathname==="/")pathname="/phase1/";if(pathname.endsWith("/"))pathname+="index.html";const full=normalize(join(root,pathname));if(!full.startsWith(normalize(root)))throw new Error("bad path");await stat(full);const data=await readFile(full);res.writeHead(200,{"content-type":types[extname(full)]??"application/octet-stream","cache-control":"no-store"});res.end(data);}catch{res.writeHead(404);res.end("Not found");}}).listen(port,"127.0.0.1",()=>console.log(`Email platform local UI: http://localhost:${port}/phase1/`));

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.local/
+**/.next/
+.env
+.env.local
+.env.production
+.env.*.local
+*.log
+*.rdb
+tmp/
+work/
+.DS_Store
+coverage/

@@ -1,0 +1,1487 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  legalName       String   @map("legal_name")
+  businessAddress String   @map("business_address")
+  timezone        String
+  locale          String   @default("en")
+  status          String
+  rowVersion      BigInt   @default(1) @map("row_version")
+  sendingEnabled  Boolean  @default(false) @map("sending_enabled")
+  senderReady     Boolean  @default(false) @map("sender_ready")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  profiles        Profile[]
+  emailDefinitions EmailDefinition[]
+  sendPolicies     SendPolicy[]
+  operationalHolds OperationalHold[]
+  @@map("workspace")
+}
+
+model Profile {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  normalizedEmail String   @map("normalized_email")
+  originalEmail   String   @map("original_email")
+  firstName       String?  @map("first_name")
+  lastName        String?  @map("last_name")
+  locale          String?
+  timezone        String?
+  countryCode     String?  @map("country_code")
+  region          String?
+  city            String?
+  source          String
+  sourceDetails   Json?    @map("source_details_json") @db.JsonB
+  firstSeenAt     DateTime @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  engagementSummary Json? @map("engagement_summary_json") @db.JsonB
+  eligibilityProjection Json? @map("eligibility_projection_json") @db.JsonB
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rowVersion      BigInt   @default(1) @map("row_version")
+  workspace       Workspace @relation(fields:[workspaceId], references:[id], onDelete:Restrict)
+  @@unique([workspaceId, normalizedEmail])
+  @@index([workspaceId, createdAt, id])
+  @@map("profile")
+}
+
+model ConsentRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  profileId    String   @map("profile_id") @db.Uuid
+  channel      String
+  purpose      String
+  status       String
+  occurredAt   DateTime @map("occurred_at") @db.Timestamptz(6)
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  source       String
+  sourceDetails Json?   @map("source_details_json") @db.JsonB
+  jurisdiction String?
+  evidenceObjectKey String? @map("evidence_object_key")
+  actorId      String?  @map("actor_id") @db.Uuid
+  @@index([workspaceId, profileId, channel, purpose, occurredAt])
+  @@map("consent_record")
+}
+
+model Suppression {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  profileId       String   @map("profile_id") @db.Uuid
+  channel         String
+  scope           String
+  reason          String
+  source          String
+  sourceReference String?  @map("source_reference")
+  protected       Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  metadataJson    Json?    @map("metadata_json") @db.JsonB
+  @@index([workspaceId, profileId, channel, revokedAt])
+  @@index([workspaceId, channel, createdAt])
+  @@map("suppression")
+}
+
+model SenderDomain {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  workspacePrimary  Boolean  @default(false) @map("workspace_primary")
+  domain             String
+  status             String
+  expectedRecords    Json?    @map("expected_records_json") @db.JsonB
+  observedRecords    Json?    @map("observed_records_json") @db.JsonB
+  providerReference  String?  @map("provider_identity_reference")
+  providerRegion     String?  @map("provider_region")
+  providerStatus     String?  @map("provider_status")
+  providerEvidence   Json?    @map("provider_evidence_json") @db.JsonB
+  dkimStatus         String?  @map("dkim_status")
+  mailFromStatus     String?  @map("mail_from_status")
+  dmarcStatus        String?  @map("dmarc_status")
+  verificationStatus String? @map("verification_status")
+  delegationStatus String? @map("delegation_status")
+  soaStatus String? @map("soa_status")
+  dkimTokens Json? @map("dkim_tokens_json") @db.JsonB
+  dkimSigningHostedZone String? @map("dkim_signing_hosted_zone")
+  ownershipVerificationToken String? @map("ownership_verification_token")
+  dkimSigningMode String? @map("dkim_signing_mode")
+  dkimSigningDomain String? @map("dkim_signing_domain")
+  dkimSelector String? @map("dkim_selector")
+  dkimPublicKey String? @map("dkim_public_key")
+  dkimPrivateKeySecretRef String? @map("dkim_private_key_secret_ref")
+  dkimStandbySelector String? @map("dkim_standby_selector")
+  dkimStandbyPublicKey String? @map("dkim_standby_public_key")
+  dkimStandbyPrivateKeySecretRef String? @map("dkim_standby_private_key_secret_ref")
+  dkimRotationState String? @map("dkim_rotation_state")
+  dkimRotationGraceUntil DateTime? @map("dkim_rotation_grace_until") @db.Timestamptz(6)
+  setupMode String? @map("setup_mode")
+  routingId String? @unique @map("routing_id")
+  ownershipVerificationTokenHash String? @map("ownership_verification_token_hash")
+  ownershipVerificationStatus String? @map("ownership_verification_status")
+  ownershipVerifiedAt DateTime? @map("ownership_verified_at") @db.Timestamptz(6)
+  dnsStatus String? @map("dns_status")
+  dmarcObservation Json? @map("dmarc_observation_json") @db.JsonB
+  rootDomain         String?  @map("root_domain")
+  delegatedSubdomain String?  @map("delegated_subdomain")
+  provisioningMode  String   @default("legacy_ses_records") @map("provisioning_mode")
+  provisioningVersion String @default("V1_LEGACY_SEND_SUBDOMAIN") @map("provisioning_version")
+  provisioningCallerReference String? @map("provisioning_caller_reference")
+  provisioningLeaseOwner String? @map("provisioning_lease_owner")
+  provisioningLeaseExpiresAt DateTime? @map("provisioning_lease_expires_at") @db.Timestamptz(6)
+  lifecycleState    String   @default("created") @map("lifecycle_state")
+  authenticationStatus String @default("pending") @map("authentication_status")
+  readinessStatus   String   @default("not_ready") @map("readiness_status")
+  readinessReasons  Json?    @map("readiness_reasons_json") @db.JsonB
+  dnsProvider       String?  @map("dns_provider")
+  hostedZoneReference String? @map("hosted_zone_reference")
+  delegationSetReference String? @map("delegation_set_reference")
+  mailFromDomain    String?  @map("mail_from_domain")
+  trackingDomain    String?  @map("tracking_domain")
+  trackingProvider  String?  @map("tracking_provider")
+  trackingTenantReference String? @map("tracking_tenant_reference")
+  trackingConnectionGroupReference String? @map("tracking_connection_group_reference")
+  trackingRoutingEndpoint String? @map("tracking_routing_endpoint")
+  trackingCertificateReference String? @map("tracking_certificate_reference")
+  trackingCertificateStatus String? @map("tracking_certificate_status")
+  trackingHttpsStatus String? @map("tracking_https_status")
+  trackingValidationMethod String? @map("tracking_validation_method")
+  lastErrorCode     String?  @map("last_error_code")
+  lastErrorMessage  String?  @map("last_error_message")
+  disconnectStatus String? @map("disconnect_status")
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz(6)
+  lastCheckedAt      DateTime? @map("last_checked_at") @db.Timestamptz(6)
+  verifiedAt         DateTime? @map("verified_at") @db.Timestamptz(6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([workspaceId, domain])
+  @@index([workspaceId, status])
+  @@index([workspaceId, lifecycleState])
+  @@index([workspaceId, readinessStatus])
+  @@index([workspaceId, workspacePrimary])
+  @@map("sender_domain")
+}
+
+model SenderDomainTransfer {
+  id              String   @id @default(uuid()) @db.Uuid
+  senderDomainId  String   @map("sender_domain_id") @db.Uuid
+  fromWorkspaceId String   @map("from_workspace_id") @db.Uuid
+  toWorkspaceId   String   @map("to_workspace_id") @db.Uuid
+  status          String   @default("pending")
+  challengeHash   String?  @map("challenge_hash")
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  approvedAt      DateTime? @map("approved_at") @db.Timestamptz(6)
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdBy       String   @map("created_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@index([senderDomainId, status])
+  @@index([toWorkspaceId, status])
+  @@map("sender_domain_transfer")
+}
+
+model SenderDomainDnsEvidence {
+  id                     String   @id @default(uuid()) @db.Uuid
+  workspaceId            String   @map("workspace_id") @db.Uuid
+  senderDomainId         String   @map("sender_domain_id") @db.Uuid
+  purpose                String
+  ownership              String
+  recordType             String   @map("record_type")
+  name                    String
+  expectedValue           String   @map("expected_value")
+  observedValues          Json?    @map("observed_values_json") @db.JsonB
+  verificationStatus     String   @map("verification_status")
+  customerActionRequired Boolean  @default(false) @map("customer_action_required")
+  validationMethod       String?  @map("validation_method")
+  lastCheckedAt          DateTime? @map("last_checked_at") @db.Timestamptz(6)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([senderDomainId, purpose, recordType, name, expectedValue])
+  @@index([workspaceId, senderDomainId, customerActionRequired])
+  @@map("sender_domain_dns_evidence")
+}
+
+model EmailDeliveryRoute {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workspaceId          String   @map("workspace_id") @db.Uuid
+  senderDomainId       String   @map("sender_domain_id") @db.Uuid
+  provider             String
+  providerRegion       String   @map("provider_region")
+  providerIdentityReference String? @map("provider_identity_reference")
+  configurationSetName String?  @map("configuration_set_name")
+  mailFromDomain       String?  @map("mail_from_domain")
+  trackingMode         String   @default("platform") @map("tracking_mode")
+  trackingHostname     String?  @map("tracking_hostname")
+  status               String   @default("provisioning")
+  holdReason            String?  @map("hold_reason")
+  rateLimitPerSecond    Int?     @map("rate_limit_per_second")
+  warmingDailyLimit     Int?     @map("warming_daily_limit")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt            DateTime? @map("archived_at") @db.Timestamptz(6)
+  @@unique([workspaceId, senderDomainId, provider])
+  @@index([workspaceId, status])
+  @@map("email_delivery_route")
+}
+
+model DeliveryCapacityBucket {
+  id            String   @id @default(uuid()) @db.Uuid
+  scopeType     String   @map("scope_type")
+  scopeId       String   @map("scope_id")
+  windowStart   DateTime @map("window_start") @db.Timestamptz(6)
+  windowSeconds Int      @map("window_seconds")
+  capacityLimit Int      @map("capacity_limit")
+  used          Int      @default(0)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([scopeType, scopeId, windowStart, windowSeconds])
+  @@index([windowStart])
+  @@map("delivery_capacity_bucket")
+}
+
+model ProviderQuotaSnapshot {
+  id            String   @id @default(uuid()) @db.Uuid
+  provider      String
+  region        String
+  max24Hour     Decimal? @map("max_24_hour") @db.Decimal(20, 4)
+  maxSendRate   Decimal? @map("max_send_rate") @db.Decimal(20, 4)
+  sentLast24Hours Decimal? @map("sent_last_24_hours") @db.Decimal(20, 4)
+  fetchedAt     DateTime @map("fetched_at") @db.Timestamptz(6)
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(6)
+  @@unique([provider, region])
+  @@index([expiresAt])
+  @@map("provider_quota_snapshot")
+}
+
+model WorkspaceProviderConfig {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workspaceId          String   @map("workspace_id") @db.Uuid
+  provider             String
+  region               String
+  sesTenantName        String?  @map("ses_tenant_name")
+  configurationSetName String?  @map("configuration_set_name")
+  providerStatus       String   @default("active") @map("provider_status")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([workspaceId, provider])
+  @@index([workspaceId, providerStatus])
+  @@map("workspace_provider_config")
+}
+
+model SenderIdentity {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  domainId      String   @map("domain_id") @db.Uuid
+  fromName      String   @map("from_name")
+  fromEmail     String   @map("from_email")
+  replyTo       String   @map("reply_to")
+  purpose       String   @default("marketing")
+  status        String   @default("pending")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([workspaceId, fromEmail])
+  @@index([workspaceId, domainId])
+  @@map("sender_identity")
+}
+
+model EmailDefinition {
+  id                  String   @id @default(uuid()) @db.Uuid
+  workspaceId         String   @map("workspace_id") @db.Uuid
+  name                String
+  authoringMode       String   @default("structured") @map("authoring_mode")
+  draftDocumentJson   Json     @map("draft_document_json") @db.JsonB
+  draftHtmlSource     String?  @map("draft_html_source")
+  draftSubject        String   @default("") @map("draft_subject")
+  draftPreheader      String   @default("") @map("draft_preheader")
+  draftSenderIdentityId String? @map("draft_sender_identity_id") @db.Uuid
+  draftReplyTo        String   @default("") @map("draft_reply_to")
+  draftPlainText      String   @default("") @map("draft_plain_text")
+  plainTextMode       String   @default("manual") @map("plain_text_mode")
+  plainTextStale      Boolean  @default(false) @map("plain_text_stale")
+  trackingEnabled     Boolean  @default(true) @map("tracking_enabled")
+  openTrackingEnabled Boolean  @default(false) @map("open_tracking_enabled")
+  rowVersion          BigInt   @default(1) @map("row_version")
+  lastPreflightJson   Json?    @map("last_preflight_json") @db.JsonB
+  lastPreflightFingerprint String? @map("last_preflight_fingerprint")
+  lastPreflightAt     DateTime? @map("last_preflight_at") @db.Timestamptz(6)
+  archivedAt          DateTime? @map("archived_at") @db.Timestamptz(6)
+  archivedBy          String?  @map("archived_by") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  workspace           Workspace @relation(fields:[workspaceId], references:[id], onDelete:Restrict)
+  versions            EmailVersion[]
+  @@index([workspaceId, updatedAt, id])
+  @@index([workspaceId, archivedAt, updatedAt, id])
+  @@map("email_definition")
+}
+
+// Workspace-scoped reusable structured starting points. Built-in starting
+// points remain code-owned; this table is exclusively for user-saved copies.
+model EmailTemplate {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  name              String
+  category          String?  @map("category")
+  documentJson      Json     @map("document_json") @db.JsonB
+  subjectTemplate   String   @default("") @map("subject_template")
+  preheaderTemplate String   @default("") @map("preheader_template")
+  plainText         String   @default("") @map("plain_text")
+  settingsJson      Json?    @map("settings_json") @db.JsonB
+  templateType      String   @default("native") @map("template_type")
+  importMethod      String?  @map("import_method")
+  originalFilename  String?  @map("original_filename")
+  originalSourceHtml String? @map("original_source_html") @db.Text
+  sanitizedHtml     String?  @map("sanitized_html") @db.Text
+  conversionStatus  String   @default("not_requested") @map("conversion_status")
+  importWarningsJson Json?   @map("import_warnings_json") @db.JsonB
+  importedAt        DateTime? @map("imported_at") @db.Timestamptz(6)
+  importedByUserId  String?  @map("imported_by_user_id") @db.Uuid
+  createdBy         String?  @map("created_by") @db.Uuid
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@index([workspaceId, archivedAt, updatedAt, id])
+  @@index([workspaceId, templateType, updatedAt])
+  @@map("email_template")
+}
+
+model TemplateImportAudit {
+  id               String   @id @default(uuid()) @db.Uuid
+  workspaceId      String   @map("workspace_id") @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  importMethod     String   @map("import_method")
+  filename         String?
+  templateId       String?  @map("template_id") @db.Uuid
+  processingResult String   @map("processing_result")
+  warningCount     Int      @default(0) @map("warning_count")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([workspaceId, createdAt])
+  @@map("template_import_audit")
+}
+
+model UniversalBlock {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  name String
+  category String?
+  blocksJson Json @map("blocks_json") @db.JsonB
+  createdBy String? @map("created_by") @db.Uuid
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@index([workspaceId, archivedAt, updatedAt])
+  @@map("universal_block")
+}
+
+model MediaAsset {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  name String
+  url String
+  objectKey String? @map("object_key")
+  altText String @default("") @map("alt_text")
+  mimeType String @default("image/*") @map("mime_type")
+  createdBy String? @map("created_by") @db.Uuid
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@index([workspaceId, archivedAt, updatedAt])
+  @@map("media_asset")
+}
+
+model WorkspaceBrandKit {
+  workspaceId String @id @map("workspace_id") @db.Uuid
+  logoUrl String? @map("logo_url")
+  primaryColor String @default("#6846ed") @map("primary_color")
+  secondaryColor String @default("#17131c") @map("secondary_color")
+  fontFamily String @default("Arial, sans-serif") @map("font_family")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@map("workspace_brand_kit")
+}
+
+model ContentVariable {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  key String
+  label String
+  defaultValue String @default("") @map("default_value")
+  type String @default("text")
+  createdBy String? @map("created_by") @db.Uuid
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([workspaceId, key])
+  @@index([workspaceId, archivedAt, label])
+  @@map("content_variable")
+}
+
+model EmailTemplateVersion {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  templateId String @map("template_id") @db.Uuid
+  versionNumber Int @map("version_number")
+  documentJson Json @map("document_json") @db.JsonB
+  subjectTemplate String @map("subject_template")
+  preheaderTemplate String @map("preheader_template")
+  plainText String @map("plain_text")
+  settingsJson Json? @map("settings_json") @db.JsonB
+  contentHash String @map("content_hash")
+  approvedAt DateTime @default(now()) @map("approved_at") @db.Timestamptz(6)
+  approvedBy String @map("approved_by") @db.Uuid
+  @@unique([templateId, versionNumber])
+  @@index([workspaceId, templateId, versionNumber])
+  @@map("email_template_version")
+}
+
+model TemplateUsage {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  templateId String @map("template_id") @db.Uuid
+  templateVersionId String? @map("template_version_id") @db.Uuid
+  usageType String @map("usage_type")
+  referenceId String @map("reference_id") @db.Uuid
+  label String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([workspaceId, templateId, createdAt])
+  @@map("template_usage")
+}
+
+model EmailVersion {
+  id                    String   @id @default(uuid()) @db.Uuid
+  workspaceId           String   @map("workspace_id") @db.Uuid
+  emailDefinitionId     String   @map("email_definition_id") @db.Uuid
+  versionNumber         Int      @map("version_number")
+  authoringMode         String   @default("structured") @map("authoring_mode")
+  authoringSchemaVersion Int     @default(1) @map("authoring_schema_version")
+  sourceDocumentJson    Json?    @map("source_document_json") @db.JsonB
+  sanitizedSource       String?  @map("sanitized_source")
+  subjectTemplate       String   @map("subject_template")
+  preheaderTemplate     String   @default("") @map("preheader_template")
+  compiledHtml          String   @map("compiled_html")
+  compiledText          String   @map("compiled_text")
+  senderIdentityId      String   @map("sender_identity_id") @db.Uuid
+  replyTo               String   @default("") @map("reply_to")
+  trackingEnabled       Boolean  @default(true) @map("tracking_enabled")
+  openTrackingEnabled   Boolean  @default(false) @map("open_tracking_enabled")
+  senderSnapshotJson    Json?    @map("sender_snapshot_json") @db.JsonB
+  contentHash           String   @map("content_hash")
+  compilerVersion       String   @default("phase2-structured-v1") @map("compiler_version")
+  sanitizerVersion      String   @default("phase2-conservative-v1") @map("sanitizer_version")
+  preflightJson         Json?    @map("preflight_json") @db.JsonB
+  publishedAt           DateTime @map("published_at") @db.Timestamptz(6)
+  publishedBy           String?  @map("published_by") @db.Uuid
+  definition            EmailDefinition @relation(fields:[emailDefinitionId], references:[id], onDelete:Restrict)
+  @@unique([emailDefinitionId, versionNumber])
+  @@index([workspaceId, id])
+  @@index([workspaceId, emailDefinitionId, versionNumber])
+  @@map("email_version")
+}
+
+model EmailTestSnapshot {
+  id                 String   @id @default(uuid()) @db.Uuid
+  workspaceId        String   @map("workspace_id") @db.Uuid
+  emailDefinitionId  String   @map("email_definition_id") @db.Uuid
+  draftRowVersion    BigInt   @map("draft_row_version")
+  sourceDocumentJson Json     @map("source_document_json") @db.JsonB
+  subjectTemplate    String   @map("subject_template")
+  preheaderTemplate  String   @default("") @map("preheader_template")
+  compiledHtml       String   @map("compiled_html")
+  compiledText       String   @map("compiled_text")
+  senderIdentityId   String   @map("sender_identity_id") @db.Uuid
+  replyTo            String   @map("reply_to")
+  senderSnapshotJson Json     @map("sender_snapshot_json") @db.JsonB
+  trackingEnabled    Boolean  @default(true) @map("tracking_enabled")
+  contentHash        String   @map("content_hash")
+  compilerVersion    String   @map("compiler_version")
+  preflightJson      Json     @map("preflight_json") @db.JsonB
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([workspaceId, emailDefinitionId, createdAt])
+  @@map("email_test_snapshot")
+}
+
+model FlowVersion {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String   @map("workspace_id") @db.Uuid
+  flowId         String   @map("flow_id") @db.Uuid
+  versionNumber  Int      @map("version_number")
+  graphJson      Json     @map("graph_json") @db.JsonB
+  graphSchemaVersion Int  @default(1) @map("graph_schema_version")
+  graphHash      String   @map("graph_hash")
+  publishedAt    DateTime @map("published_at") @db.Timestamptz(6)
+  entryPolicyJson Json? @map("entry_policy_json") @db.JsonB
+  exitRulesJson Json? @map("exit_rules_json") @db.JsonB
+  publishedBy String? @map("published_by") @db.Uuid
+  @@unique([flowId, versionNumber])
+  @@index([workspaceId, flowId])
+  @@map("flow_version")
+}
+
+model EmailFlowDependency {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  emailDefinitionId String   @map("email_definition_id") @db.Uuid
+  emailVersionId    String   @map("email_version_id") @db.Uuid
+  flowId            String   @map("flow_id") @db.Uuid
+  flowVersionId     String   @map("flow_version_id") @db.Uuid
+  nodeId            String   @map("node_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([flowVersionId, nodeId])
+  @@index([workspaceId, emailDefinitionId])
+  @@index([workspaceId, emailVersionId])
+  @@map("email_flow_dependency")
+}
+
+model FlowTriggerDependency {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  flowId        String   @map("flow_id") @db.Uuid
+  flowVersionId String   @map("flow_version_id") @db.Uuid
+  triggerType   String   @map("trigger_type")
+  referenceId   String?  @map("reference_id") @db.Uuid
+  eventName     String?  @map("event_name")
+  schemaVersion Int?     @map("schema_version")
+  dateField     String?  @map("date_field")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([flowVersionId, triggerType])
+  @@index([workspaceId, triggerType, referenceId])
+  @@index([workspaceId, triggerType, eventName, schemaVersion])
+  @@map("flow_trigger_dependency")
+}
+
+// One durable, one-time calendar-date entry opportunity. It is separate from
+// scheduled_action because it exists before a Flow Run has been created.
+model FlowDateTriggerSchedule {
+  id            String    @id @default(uuid()) @db.Uuid
+  workspaceId   String    @map("workspace_id") @db.Uuid
+  flowId        String    @map("flow_id") @db.Uuid
+  flowVersionId String    @map("flow_version_id") @db.Uuid
+  profileId     String    @map("profile_id") @db.Uuid
+  dateField     String    @map("date_field")
+  sourceDate    DateTime  @map("source_date") @db.Timestamptz(6)
+  dueAt         DateTime  @map("due_at") @db.Timestamptz(6)
+  state         String    @default("pending")
+  leaseOwner    String?   @map("lease_owner")
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  dispatchedAt  DateTime? @map("dispatched_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([flowVersionId, profileId])
+  @@index([workspaceId, state, dueAt])
+  @@index([workspaceId, flowId, flowVersionId])
+  @@map("flow_date_trigger_schedule")
+}
+
+model FlowValidationResult {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  flowId      String   @map("flow_id") @db.Uuid
+  rowVersion  BigInt   @map("row_version")
+  fingerprint String
+  state       String
+  issuesJson  Json     @map("issues_json") @db.JsonB
+  checkedAt   DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+  @@unique([flowId, rowVersion])
+  @@index([workspaceId, flowId, checkedAt])
+  @@map("flow_validation_result")
+}
+
+model FlowRun {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String   @map("workspace_id") @db.Uuid
+  flowId         String   @map("flow_id") @db.Uuid
+  flowVersionId  String   @map("flow_version_id") @db.Uuid
+  profileId      String   @map("profile_id") @db.Uuid
+  triggerEventId String? @map("trigger_event_id") @db.Uuid
+  deduplicationKey String @map("deduplication_key")
+  state          String
+  currentNodeId  String   @map("current_node_id")
+  enteredAt      DateTime @map("entered_at") @db.Timestamptz(6)
+  nextActionAt   DateTime? @map("next_action_at") @db.Timestamptz(6)
+  endedAt        DateTime? @map("ended_at") @db.Timestamptz(6)
+  exitReason     String?  @map("exit_reason")
+  rowVersion     BigInt   @default(1) @map("row_version")
+  @@unique([workspaceId, flowVersionId, deduplicationKey])
+  @@index([workspaceId, state, nextActionAt])
+  @@index([workspaceId, flowId, enteredAt])
+  @@index([workspaceId, flowId, endedAt])
+  @@map("flow_run")
+}
+
+model FlowNodeExecution {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String   @map("workspace_id") @db.Uuid
+  flowRunId      String   @map("flow_run_id") @db.Uuid
+  nodeId         String   @map("node_id")
+  attemptSequence Int     @map("attempt_sequence")
+  state          String
+  scheduledAt    DateTime? @map("scheduled_at") @db.Timestamptz(6)
+  startedAt      DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(6)
+  inputSnapshot  Json?    @map("input_snapshot_json") @db.JsonB
+  evaluationResult Json?  @map("evaluation_result_json") @db.JsonB
+  errorJson      Json?    @map("error_json") @db.JsonB
+  @@unique([flowRunId, nodeId, attemptSequence])
+  @@index([workspaceId, flowRunId])
+  @@index([workspaceId, completedAt])
+  @@map("flow_node_execution")
+}
+
+model ScheduledAction {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String   @map("workspace_id") @db.Uuid
+  actionType     String   @map("action_type")
+  aggregateType  String   @map("aggregate_type")
+  aggregateId    String   @map("aggregate_id") @db.Uuid
+  dueAt          DateTime @map("due_at") @db.Timestamptz(6)
+  state          String
+  leaseOwner     String?  @map("lease_owner")
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  attemptCount   Int      @default(0) @map("attempt_count")
+  payloadVersion Int      @default(1) @map("payload_version")
+  payloadJson    Json     @map("payload_json") @db.JsonB
+  deduplicationKey String? @unique @map("deduplication_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(6)
+  @@index([state, dueAt])
+  @@index([workspaceId, aggregateId])
+  @@map("scheduled_action")
+}
+
+model Message {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  sourceType      String   @map("source_type")
+  sourceId        String   @map("source_id") @db.Uuid
+  flowRunId       String?  @map("flow_run_id") @db.Uuid
+  nodeId          String?  @map("node_id")
+  profileId       String   @map("profile_id") @db.Uuid
+  emailVersionId  String?  @map("email_version_id") @db.Uuid
+  emailTestSnapshotId String? @map("email_test_snapshot_id") @db.Uuid
+  idempotencyKey  String   @map("idempotency_key")
+  state           String
+  policyDecision  Json?    @map("policy_decision_json") @db.JsonB
+  renderedHash    String?  @map("rendered_hash")
+  scheduledFor    DateTime @map("scheduled_for") @db.Timestamptz(6)
+  renderedAt      DateTime? @map("rendered_at") @db.Timestamptz(6)
+  submittedAt     DateTime? @map("submitted_at") @db.Timestamptz(6)
+  finalAt         DateTime? @map("final_at") @db.Timestamptz(6)
+  @@unique([workspaceId, idempotencyKey])
+  @@index([workspaceId, profileId, createdAt])
+  @@index([workspaceId, sourceType, submittedAt])
+  @@index([workspaceId, sourceType, createdAt])
+  @@index([workspaceId, emailVersionId])
+  @@index([workspaceId, emailTestSnapshotId])
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@map("message")
+}
+
+model DeliveryAttempt {
+  id                String   @id @default(uuid()) @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  messageId         String   @map("message_id") @db.Uuid
+  attemptNumber     Int      @map("attempt_number")
+  provider          String
+  routeId           String?  @map("route_id") @db.Uuid
+  requestFingerprint String  @map("request_fingerprint")
+  providerMessageId String?  @map("provider_message_id")
+  state             String
+  submittedAt       DateTime? @map("submitted_at") @db.Timestamptz(6)
+  responseAt        DateTime? @map("response_at") @db.Timestamptz(6)
+  errorClass        String?  @map("error_class")
+  errorCode         String?  @map("error_code")
+  @@unique([messageId, attemptNumber])
+  @@unique([provider, providerMessageId])
+  @@index([workspaceId, providerMessageId])
+  @@map("delivery_attempt")
+}
+
+model DeliveryEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  workspaceId      String   @map("workspace_id") @db.Uuid
+  messageId        String   @map("message_id") @db.Uuid
+  provider         String
+  providerEventId  String   @map("provider_event_id")
+  eventType        String   @map("event_type")
+  occurredAt       DateTime @map("occurred_at") @db.Timestamptz(6)
+  receivedAt       DateTime @map("received_at") @db.Timestamptz(6)
+  normalizedPayload Json?   @map("normalized_payload_json") @db.JsonB
+  @@unique([provider, providerEventId])
+  @@index([workspaceId, messageId, occurredAt])
+  @@index([workspaceId, eventType, occurredAt])
+  @@map("delivery_event")
+}
+
+model OutboxEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String?  @map("workspace_id") @db.Uuid
+  aggregateType  String   @map("aggregate_type")
+  aggregateId    String   @map("aggregate_id") @db.Uuid
+  eventType      String   @map("event_type")
+  eventVersion   Int      @default(1) @map("event_version")
+  payloadJson    Json     @map("payload_json") @db.JsonB
+  deduplicationKey String? @unique @map("deduplication_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt    DateTime? @map("published_at") @db.Timestamptz(6)
+  attemptCount   Int      @default(0) @map("attempt_count")
+  lastError      String?  @map("last_error")
+  @@index([publishedAt, createdAt])
+  @@map("outbox_event")
+}
+
+model InboxMessage {
+  id            String   @id @default(uuid()) @db.Uuid
+  source        String
+  workspaceId   String?  @map("workspace_id") @db.Uuid
+  externalId    String   @map("external_id")
+  payloadHash   String   @map("payload_hash")
+  payloadJson   Json?    @map("payload_json") @db.JsonB
+  receivedAt    DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz(6)
+  status        String
+  errorCode     String?  @map("error_code")
+  @@unique([source, externalId])
+  @@index([workspaceId, source, status, receivedAt])
+  @@map("inbox_message")
+}
+
+model TraceEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  aggregateType String   @map("aggregate_type")
+  aggregateId   String   @map("aggregate_id") @db.Uuid
+  kind          String
+  detailJson    Json     @map("detail_json") @db.JsonB
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  @@index([workspaceId, aggregateId, occurredAt])
+  @@index([workspaceId, kind, occurredAt])
+  @@map("trace_event")
+}
+
+model Phase0GateEvidence {
+  id          String   @id @default(uuid()) @db.Uuid
+  checkKey    String   @unique @map("check_key")
+  status      String
+  evidenceJson Json    @map("evidence_json") @db.JsonB
+  checkedAt   DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+  @@map("phase0_gate_evidence")
+}
+
+
+// Phase 1 - identity, audience, import/export, consent projection, and audit foundation.
+model UserIdentity {
+  id              String   @id @default(uuid()) @db.Uuid
+  provider        String
+  providerSubject String   @map("provider_subject")
+  email           String
+  displayName     String?  @map("display_name")
+  status          String   @default("active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([provider, providerSubject])
+  @@index([email])
+  @@map("user_identity")
+}
+
+// Local-password access is restricted to explicitly enabled local deployments.
+// Password material is derived with a per-account salt; session tokens are
+// stored only as one-way hashes and are never returned by the API.
+model LocalPasswordCredential {
+  userId            String   @id @map("user_id") @db.Uuid
+  passwordHash      String   @map("password_hash")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@map("local_password_credential")
+}
+
+model LocalSession {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([userId, expiresAt])
+  @@map("local_session")
+}
+
+model WorkspaceMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  role        String
+  status      String
+  invitedBy   String?  @map("invited_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@unique([workspaceId, userId])
+  @@index([workspaceId, role, status])
+  @@map("workspace_member")
+}
+
+model WorkspaceInvitation {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  email       String
+  role        String
+  tokenHash   String   @map("token_hash")
+  invitedBy   String   @map("invited_by") @db.Uuid
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([workspaceId, tokenHash])
+  @@index([workspaceId, email, expiresAt])
+  @@map("workspace_invitation")
+}
+
+model ProfileIdentifier {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  profileId       String   @map("profile_id") @db.Uuid
+  kind            String
+  normalizedValue String   @map("normalized_value")
+  originalValue   String   @map("original_value")
+  source          String
+  verifiedAt      DateTime? @map("verified_at") @db.Timestamptz(6)
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([workspaceId, kind, normalizedValue])
+  @@index([workspaceId, profileId])
+  @@map("profile_identifier")
+}
+
+model ProfilePropertyDefinition {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String   @map("workspace_id") @db.Uuid
+  key            String
+  displayName    String   @map("display_name")
+  dataType       String   @map("data_type")
+  isArray        Boolean  @default(false) @map("is_array")
+  validationJson Json?    @map("validation_json") @db.JsonB
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([workspaceId, key])
+  @@map("profile_property_definition")
+}
+
+model ProfilePropertyValue {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  profileId    String   @map("profile_id") @db.Uuid
+  definitionId String   @map("definition_id") @db.Uuid
+  textValue    String?  @map("text_value")
+  numberValue  Decimal? @map("number_value") @db.Decimal(30,10)
+  booleanValue Boolean? @map("boolean_value")
+  datetimeValue DateTime? @map("datetime_value") @db.Timestamptz(6)
+  jsonValue    Json?    @map("json_value") @db.JsonB
+  source       String
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rowVersion   BigInt   @default(1) @map("row_version")
+  @@unique([workspaceId, profileId, definitionId])
+  @@index([workspaceId, definitionId, profileId])
+  @@map("profile_property_value")
+}
+
+model ProfileMerge {
+  id                 String   @id @default(uuid()) @db.Uuid
+  workspaceId        String   @map("workspace_id") @db.Uuid
+  canonicalProfileId String   @map("canonical_profile_id") @db.Uuid
+  sourceProfileId    String   @map("source_profile_id") @db.Uuid
+  policyJson         Json     @map("policy_json") @db.JsonB
+  actorId            String?  @map("actor_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([workspaceId, canonicalProfileId, createdAt])
+  @@map("profile_merge")
+}
+
+model AudienceList {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  name        String
+  description String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(6)
+  @@index([workspaceId, status, updatedAt, id])
+  @@map("audience_list")
+}
+
+model ListMembership {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  listId      String   @map("list_id") @db.Uuid
+  profileId   String   @map("profile_id") @db.Uuid
+  state       String
+  joinedAt    DateTime @map("joined_at") @db.Timestamptz(6)
+  leftAt      DateTime? @map("left_at") @db.Timestamptz(6)
+  sourceType  String   @map("source_type")
+  sourceId    String?  @map("source_id")
+  actorId     String?  @map("actor_id") @db.Uuid
+  @@unique([workspaceId, listId, profileId])
+  @@index([workspaceId, profileId, state])
+  @@index([workspaceId, listId, state, joinedAt, id])
+  @@map("list_membership")
+}
+
+model SubscriptionState {
+  workspaceId          String   @map("workspace_id") @db.Uuid
+  profileId            String   @map("profile_id") @db.Uuid
+  channel              String
+  purpose              String
+  currentStatus        String   @map("current_status")
+  effectiveAt          DateTime @map("effective_at") @db.Timestamptz(6)
+  sourceConsentRecordId String  @map("source_consent_record_id") @db.Uuid
+  revision             BigInt   @default(1)
+  unsubscribedAt       DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  unsubscribeSource    String?  @map("unsubscribe_source")
+  unsubscribeCampaignId String? @map("unsubscribe_campaign_id") @db.Uuid
+  unsubscribeMessageId String?  @map("unsubscribe_message_id") @db.Uuid
+  unsubscribeMethod    String?  @map("unsubscribe_method")
+  @@id([workspaceId, profileId, channel, purpose])
+  @@map("subscription_state")
+}
+
+model ImportJob {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  objectKey       String   @map("object_key")
+  originalName    String?  @map("original_name")
+  checksum        String?
+  contentHash     String?  @map("content_hash")
+  state           String
+  mappingJson     Json?    @map("mapping_json") @db.JsonB
+  policyJson      Json?    @map("policy_json") @db.JsonB
+  totalsJson      Json?    @map("totals_json") @db.JsonB
+  errorObjectKey  String?  @map("error_object_key")
+  createdBy       String?  @map("created_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz(6)
+  @@index([workspaceId, createdAt, id])
+  @@index([workspaceId, contentHash, state])
+  @@map("import_job")
+}
+
+model ImportChunk {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  importJobId String   @map("import_job_id") @db.Uuid
+  chunkIndex  Int      @map("chunk_index")
+  state       String
+  rowStart    Int      @map("row_start")
+  rowEnd      Int      @map("row_end")
+  attemptCount Int     @default(0) @map("attempt_count")
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  @@unique([importJobId, chunkIndex])
+  @@index([workspaceId, importJobId, state])
+  @@map("import_chunk")
+}
+
+model ImportRowResult {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  importJobId String   @map("import_job_id") @db.Uuid
+  rowNumber   Int      @map("row_number")
+  state       String
+  profileId   String?  @map("profile_id") @db.Uuid
+  errorsJson  Json?    @map("errors_json") @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([importJobId, rowNumber])
+  @@index([workspaceId, importJobId, state])
+  @@map("import_row_result")
+}
+
+model ImportChange {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  importJobId String   @map("import_job_id") @db.Uuid
+  profileId   String?  @map("profile_id") @db.Uuid
+  changeType  String   @map("change_type")
+  fieldKey    String?  @map("field_key")
+  beforeJson  Json?    @map("before_json") @db.JsonB
+  afterJson   Json?    @map("after_json") @db.JsonB
+  revision    BigInt?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([workspaceId, importJobId, id])
+  @@map("import_change")
+}
+
+model ExportJob {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  state       String
+  scopeJson   Json     @map("scope_json") @db.JsonB
+  fieldsJson  Json     @map("fields_json") @db.JsonB
+  purpose     String?
+  objectKey   String?  @map("object_key")
+  tokenHash   String?  @map("token_hash")
+  recordCount Int?     @map("record_count")
+  createdBy   String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  @@index([workspaceId, createdAt, id])
+  @@map("export_job")
+}
+
+model AuditEvent {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workspaceId          String   @map("workspace_id") @db.Uuid
+  actorType            String   @map("actor_type")
+  actorId              String?  @map("actor_id") @db.Uuid
+  action               String
+  objectType           String   @map("object_type")
+  objectId             String?  @map("object_id")
+  riskLevel            String   @map("risk_level")
+  beforeJson           Json?    @map("before_json") @db.JsonB
+  afterJson            Json?    @map("after_json") @db.JsonB
+  requestId            String?  @map("request_id")
+  correlationId        String?  @map("correlation_id")
+  occurredAt           DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  supportAccessGrantId String?  @map("support_access_grant_id") @db.Uuid
+  @@index([workspaceId, occurredAt, id])
+  @@index([workspaceId, action, occurredAt])
+  @@map("audit_event")
+}
+
+
+model WorkspaceReadinessCheck {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  checkKey    String   @map("check_key")
+  status      String
+  evidenceJson Json?   @map("evidence_json") @db.JsonB
+  checkedAt   DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+  @@unique([workspaceId, checkKey])
+  @@index([workspaceId, status])
+  @@map("workspace_readiness_check")
+}
+
+model Phase1GateEvidence {
+  id           String   @id @default(uuid()) @db.Uuid
+  checkKey     String   @unique @map("check_key")
+  status       String
+  evidenceJson Json     @map("evidence_json") @db.JsonB
+  checkedAt    DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+  @@map("phase1_gate_evidence")
+}
+
+
+// Phase 2 - content, policy, rendering, tracking, holds and delivery-control foundation.
+model SendPolicy {
+  id                    String   @id @default(uuid()) @db.Uuid
+  workspaceId           String   @map("workspace_id") @db.Uuid
+  policyVersion         Int      @map("policy_version")
+  frequencyWindowSeconds Int     @default(86400) @map("frequency_window_seconds")
+  frequencyMax          Int      @default(3) @map("frequency_max")
+  quietHoursJson        Json?    @map("quiet_hours_json") @db.JsonB
+  timezoneFallback      String   @default("workspace") @map("timezone_fallback")
+  warmingJson           Json?    @map("warming_json") @db.JsonB
+  createdBy             String?  @map("created_by") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  active                Boolean  @default(true)
+  workspace             Workspace @relation(fields:[workspaceId], references:[id], onDelete:Restrict)
+  @@unique([workspaceId, policyVersion])
+  @@index([workspaceId, active, createdAt])
+  @@map("send_policy")
+}
+
+model OperationalHold {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  scopeType    String   @map("scope_type")
+  scopeId      String?  @map("scope_id")
+  reason       String
+  state        String
+  createdBy    String?  @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  releasedAt   DateTime? @map("released_at") @db.Timestamptz(6)
+  releaseReason String? @map("release_reason")
+  workspace    Workspace @relation(fields:[workspaceId], references:[id], onDelete:Restrict)
+  @@index([workspaceId, state, scopeType, createdAt])
+  @@map("operational_hold")
+}
+
+model FrequencyReservation {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  profileId   String   @map("profile_id") @db.Uuid
+  messageId   String   @map("message_id") @db.Uuid
+  purpose     String   @default("marketing")
+  reservedAt  DateTime @default(now()) @map("reserved_at") @db.Timestamptz(6)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+  consumedAt  DateTime? @map("consumed_at") @db.Timestamptz(6)
+  releasedAt  DateTime? @map("released_at") @db.Timestamptz(6)
+  @@unique([workspaceId, messageId])
+  @@index([workspaceId, profileId, purpose, reservedAt])
+  @@map("frequency_reservation")
+}
+
+model RenderedMessageArtifact {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  messageId       String   @map("message_id") @db.Uuid
+  objectKey       String   @map("object_key")
+  contentHash     String   @map("content_hash")
+  mimeHash        String   @map("mime_hash")
+  byteSize        Int      @map("byte_size")
+  compilerVersion String   @map("compiler_version")
+  sanitizerVersion String  @map("sanitizer_version")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([workspaceId, messageId])
+  @@map("rendered_message_artifact")
+}
+
+model TrackingLink {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  messageId     String   @map("message_id") @db.Uuid
+  destination   String
+  destinationHash String @map("destination_hash")
+  tokenVersion  Int      @default(1) @map("token_version")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([workspaceId, messageId])
+  @@unique([workspaceId, messageId, destinationHash])
+  @@map("tracking_link")
+}
+
+model Phase2GateEvidence {
+  id           String   @id @default(uuid()) @db.Uuid
+  checkKey     String   @unique @map("check_key")
+  status       String
+  evidenceJson Json     @map("evidence_json") @db.JsonB
+  checkedAt    DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+  @@map("phase2_gate_evidence")
+}
+
+model Segment {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  name String
+  description String @default("")
+  status String @default("draft")
+  draftRuleJson Json @map("draft_rule_json") @db.JsonB
+  rowVersion BigInt @default(1) @map("row_version")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@index([workspaceId,status,updatedAt])
+  @@map("segment")
+}
+model SegmentVersion {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  segmentId String @map("segment_id") @db.Uuid
+  versionNumber Int @map("version_number")
+  ruleAstJson Json @map("rule_ast_json") @db.JsonB
+  ruleSchemaVersion Int @default(1) @map("rule_schema_version")
+  publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  publishedBy String? @map("published_by") @db.Uuid
+  @@unique([segmentId,versionNumber])
+  @@map("segment_version")
+}
+model SegmentMembershipProjection {
+  workspaceId String @map("workspace_id") @db.Uuid
+  segmentId String @map("segment_id") @db.Uuid
+  segmentVersionId String @map("segment_version_id") @db.Uuid
+  profileId String @map("profile_id") @db.Uuid
+  isMember Boolean @map("is_member")
+  evaluatedAt DateTime @map("evaluated_at") @db.Timestamptz(6)
+  evaluationRevision BigInt @default(1) @map("evaluation_revision")
+  @@id([segmentVersionId,profileId])
+  @@index([workspaceId,segmentId,isMember,evaluatedAt])
+  @@map("segment_membership_projection")
+}
+model EventSchema {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  eventName String @map("event_name")
+  schemaVersion Int @map("schema_version")
+  propertySchemaJson Json @map("property_schema_json") @db.JsonB
+  status String @default("active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([workspaceId,eventName,schemaVersion])
+  @@map("event_schema")
+}
+model Event {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  eventName String @map("event_name")
+  externalEventId String @map("external_event_id")
+  profileId String? @map("profile_id") @db.Uuid
+  source String
+  sourceVersion String? @map("source_version")
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  propertiesJson Json @map("properties_json") @db.JsonB
+  schemaVersion Int @map("schema_version")
+  idempotencyKey String @map("idempotency_key")
+  processingStatus String @default("accepted") @map("processing_status")
+  @@unique([workspaceId,source,idempotencyKey])
+  @@index([workspaceId,eventName,occurredAt])
+  @@map("event")
+}
+model ApiCredential {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  name String
+  prefix String
+  secretHash String @map("secret_hash")
+  scopesJson Json @map("scopes_json") @db.JsonB
+  createdBy String? @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  @@index([workspaceId,revokedAt,expiresAt])
+  @@map("api_credential")
+}
+model Flow {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  name String
+  status String @default("draft")
+  draftGraphJson Json @map("draft_graph_json") @db.JsonB
+  activeVersionId String? @map("active_version_id") @db.Uuid
+  activeVersionActivatedAt DateTime? @map("active_version_activated_at") @db.Timestamptz(6)
+  entryState String @default("open") @map("entry_state")
+  executionState String @default("running") @map("execution_state")
+  pausedAt DateTime? @map("paused_at") @db.Timestamptz(6)
+  rowVersion BigInt @default(1) @map("row_version")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@index([workspaceId,status,updatedAt])
+  @@map("flow")
+}
+model Phase3GateEvidence {
+  id String @id @default(uuid()) @db.Uuid
+  checkKey String @unique @map("check_key")
+  status String
+  evidenceJson Json @map("evidence_json") @db.JsonB
+  checkedAt DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+  @@map("phase3_gate_evidence")
+}
+
+model SegmentMembershipTransition {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  segmentId String @map("segment_id") @db.Uuid
+  segmentVersionId String @map("segment_version_id") @db.Uuid
+  profileId String @map("profile_id") @db.Uuid
+  transition String
+  transitionKey String @unique @map("transition_key")
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  @@index([workspaceId,segmentId,occurredAt])
+  @@map("segment_membership_transition")
+}
+
+// A run is the source of truth for whether an active segment projection can be
+// presented as current. Projection rows alone cannot express a failed or stale
+// refresh, nor which published version was evaluated.
+model SegmentEvaluationRun {
+  id               String    @id @default(uuid()) @db.Uuid
+  workspaceId      String    @map("workspace_id") @db.Uuid
+  segmentId        String    @map("segment_id") @db.Uuid
+  segmentVersionId String    @map("segment_version_id") @db.Uuid
+  state            String
+  trigger          String
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+  evaluatedAt      DateTime? @map("evaluated_at") @db.Timestamptz(6)
+  memberCount      Int?      @map("member_count")
+  errorCode        String?   @map("error_code")
+  @@index([workspaceId, segmentId, segmentVersionId, startedAt])
+  @@index([workspaceId, segmentId, state, completedAt])
+  @@map("segment_evaluation_run")
+}
+
+model DeadLetterItem {
+  id String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  resourceType String @map("resource_type")
+  resourceId String @map("resource_id") @db.Uuid
+  jobType String @map("job_type")
+  businessKey String @map("business_key")
+  errorJson Json @map("error_json") @db.JsonB
+  state String @default("open")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  replayedAt DateTime? @map("replayed_at") @db.Timestamptz(6)
+  @@index([workspaceId,state,createdAt])
+  @@map("dead_letter_item")
+}
+
+// Phase 4 - production hardening, recovery, privacy and controlled-pilot evidence.
+model Phase4SecurityFinding {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String?  @map("workspace_id") @db.Uuid
+  title       String
+  severity    String
+  status      String   @default("open")
+  owner       String?
+  reviewAt    DateTime? @map("review_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  closedAt    DateTime? @map("closed_at") @db.Timestamptz(6)
+  @@index([status,severity,createdAt])
+  @@index([workspaceId,status])
+  @@map("phase4_security_finding")
+}
+
+model Phase4LaunchEvidence {
+  id          String   @id @default(uuid()) @db.Uuid
+  area        String
+  status      String
+  summary     String
+  approver    String?
+  recordedAt  DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  @@index([area,status,recordedAt])
+  @@map("phase4_launch_evidence")
+}
+
+model Phase4PilotStopSignal {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String
+  detail      String
+  active      Boolean  @default(true)
+  observedAt  DateTime @default(now()) @map("observed_at") @db.Timestamptz(6)
+  clearedAt   DateTime? @map("cleared_at") @db.Timestamptz(6)
+  @@index([active,observedAt])
+  @@map("phase4_pilot_stop_signal")
+}
+
+model Phase4PilotState {
+  id          String   @id
+  stage       Int      @default(0)
+  state       String   @default("locked")
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  holdReason  String?  @map("hold_reason")
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@map("phase4_pilot_state")
+}
+
+model Phase4CapacityEvidence {
+  id          String   @id @default(uuid()) @db.Uuid
+  scenario    String
+  startedAt   DateTime @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime @map("finished_at") @db.Timestamptz(6)
+  target      Float
+  achieved    Float
+  errorRate   Float    @map("error_rate")
+  safeCeiling Float    @map("safe_ceiling")
+  passed      Boolean
+  notes       String?
+  @@index([scenario,finishedAt])
+  @@map("phase4_capacity_evidence")
+}
+
+model Phase4RecoveryExercise {
+  id          String   @id @default(uuid()) @db.Uuid
+  scenario    String
+  status      String
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  rpoMinutes  Int?     @map("rpo_minutes")
+  rtoMinutes  Int?     @map("rto_minutes")
+  evidenceJson Json    @map("evidence_json") @db.JsonB
+  @@index([scenario,status,finishedAt])
+  @@map("phase4_recovery_exercise")
+}
+
+model Phase4PrivacyDeletionJob {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  profileId     String   @map("profile_id") @db.Uuid
+  state         String
+  requestedAt   DateTime @default(now()) @map("requested_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tombstoneHash String?  @map("tombstone_hash")
+  error         String?
+  @@index([workspaceId,profileId,state])
+  @@map("phase4_privacy_deletion_job")
+}
+
+model Phase4HardeningEvidence {
+  id           String   @id @default(uuid()) @db.Uuid
+  checkKey     String   @unique @map("check_key")
+  status       String
+  summary      String
+  owner        String?
+  evidenceJson Json     @map("evidence_json") @db.JsonB
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  reviewAt     DateTime? @map("review_at") @db.Timestamptz(6)
+  @@index([status,recordedAt])
+  @@map("phase4_hardening_evidence")
+}
+
+model Phase4PilotObservation {
+  id                     String   @id @default(uuid()) @db.Uuid
+  stage                  Int      @unique
+  audience               String
+  startedAt              DateTime @map("started_at") @db.Timestamptz(6)
+  finishedAt             DateTime @map("finished_at") @db.Timestamptz(6)
+  healthPassed           Boolean  @map("health_passed")
+  unresolvedAlerts       Int      @map("unresolved_alerts")
+  expectedEventsReceived Boolean? @map("expected_events_received")
+  enoughFeedback         Boolean? @map("enough_feedback")
+  withinWarmingCeiling   Boolean? @map("within_warming_ceiling")
+  completeFlowCycle      Boolean? @map("complete_flow_cycle")
+  approvedBy             String   @map("approved_by")
+  evidenceJson           Json     @map("evidence_json") @db.JsonB
+  recordedAt             DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  @@index([healthPassed,recordedAt])
+  @@map("phase4_pilot_observation")
+}
+
+model Phase4ReleaseState {
+  id         String   @id
+  status     String   @default("locked")
+  approvedAt DateTime? @map("approved_at") @db.Timestamptz(6)
+  approvedBy String?  @map("approved_by")
+  notes      String?
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@map("phase4_release_state")
+}
+
+model Phase4SloObservation {
+  id           String   @id @default(uuid()) @db.Uuid
+  indicator    String
+  windowStart  DateTime @map("window_start") @db.Timestamptz(6)
+  windowEnd    DateTime @map("window_end") @db.Timestamptz(6)
+  observedJson Json     @map("observed_json") @db.JsonB
+  objective    String
+  passed       Boolean
+  evidenceJson Json     @map("evidence_json") @db.JsonB
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  @@index([indicator,recordedAt])
+  @@map("phase4_slo_observation")
+}
+
+model Phase4MigrationRehearsal {
+  id                String   @id @default(uuid()) @db.Uuid
+  sourceLabel       String   @map("source_label")
+  sourceRows        Int      @map("source_rows")
+  acceptedRows      Int      @map("accepted_rows")
+  rejectedRows      Int      @map("rejected_rows")
+  duplicateRows     Int      @map("duplicate_rows")
+  invalidRows       Int      @map("invalid_rows")
+  missingConsentRows Int     @map("missing_consent_rows")
+  suppressedRows    Int      @map("suppressed_rows")
+  acceptedProfiles  Int      @map("accepted_profiles")
+  listMemberships   Int      @map("list_memberships")
+  consentGranted    Int      @map("consent_granted")
+  exclusions        Int
+  reconciled        Boolean
+  sourceOfTruthPlan String   @map("source_of_truth_plan")
+  evidenceJson      Json     @map("evidence_json") @db.JsonB
+  startedAt         DateTime @map("started_at") @db.Timestamptz(6)
+  finishedAt        DateTime @map("finished_at") @db.Timestamptz(6)
+  owner             String
+  @@index([reconciled,finishedAt])
+  @@map("phase4_migration_rehearsal")
+}

@@ -1,0 +1,2 @@
+import { NotificationsPanel } from "../../../../components/notifications-panel";
+export default async function Page({params}:{params:Promise<{workspaceId:string}>}){const {workspaceId}=await params;return <section><div className="page-heading"><div><h1>Notifications</h1><p>Actionable workspace conditions derived from current configuration and delivery facts.</p></div></div><NotificationsPanel workspaceId={workspaceId}/></section>}

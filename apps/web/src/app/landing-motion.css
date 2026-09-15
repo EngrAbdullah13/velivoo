@@ -1,0 +1,148 @@
+/* Counters, curves and bars share the scene's viewport-triggered progress. */
+.marketing-site .growth-scene { position: relative; --growth-progress: 1; }
+.marketing-site .growth-number {
+  position: relative;
+  display: inline-grid;
+  vertical-align: baseline;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.marketing-site .growth-number > span {
+  grid-area: 1 / 1;
+  display: block;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: nowrap;
+}
+.marketing-site .growth-number .growth-number-size { visibility: hidden; }
+.marketing-site .growth-number .growth-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.marketing-site .growth-scene-caption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 15px 0 0;
+  padding: 0;
+  border: 0;
+  color: #69776f;
+}
+.marketing-site .growth-scene-caption > span {
+  display: inline;
+  margin: 0;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: .01em;
+}
+.marketing-site .growth-scene-caption button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: #5c43be;
+  background: #eee9ff;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.marketing-site .growth-scene-caption button > span { display: inline; margin: 0; color: inherit; font: inherit; }
+.marketing-site .growth-scene-caption button:hover { border-color: #b1a0ed; }
+.marketing-site .growth-scene-caption button:focus-visible { outline: 2px solid #7558e8; outline-offset: 3px; }
+.marketing-site .growth-scene-caption button:disabled { opacity: .5; cursor: default; }
+
+/* Revenue panel: values climb as the graph draws and its area rises. */
+.hero-visual.growth-scene .dashboard-preview {
+  transform: rotate(2.7deg) translateY(calc((1 - var(--growth-progress)) * 20px));
+}
+.hero-visual.growth-scene .card-orders {
+  transform: rotate(-2deg) translateY(calc((1 - var(--growth-progress)) * 30px));
+}
+.hero-visual.growth-scene .card-message {
+  transform: rotate(-3deg) translateY(calc((1 - var(--growth-progress)) * 18px));
+}
+.hero-visual.growth-scene > .growth-scene-caption { position: absolute; z-index: 2; left: 7%; right: 5%; bottom: -40px; }
+.growth-scene .preview-chart path:not(.chart-fill),
+.growth-scene .insight-graph path:not(.insight-area) {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--growth-progress));
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  transform: scaleY(calc(.15 + var(--growth-progress) * .85));
+}
+.growth-scene .preview-chart .chart-fill,
+.growth-scene .insight-graph .insight-area {
+  clip-path: inset(0 calc((1 - var(--growth-progress)) * 100%) 0 0);
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  transform: scaleY(calc(.15 + var(--growth-progress) * .85));
+  opacity: calc(.2 + var(--growth-progress) * .8);
+}
+.growth-scene .preview-stats > div,
+.growth-scene .insight-kpis > div {
+  transform: translateY(calc((1 - var(--growth-progress)) * 10px));
+}
+.growth-scene .mini-bars i {
+  transform-origin: center bottom;
+  transform: scaleY(calc(.05 + var(--growth-progress) * .95));
+}
+.metric-mock.growth-scene > .growth-scene-caption { color: #c3cedd; }
+.proof-stats.growth-scene > div:not(.growth-scene-caption) { padding-top: 16px; padding-bottom: 16px; }
+.marketing-site .proof-stats .proof-growth-track {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: 4px;
+  margin-top: 12px;
+  overflow: hidden;
+  background: #ffffff15;
+  border-radius: 99px;
+}
+.proof-growth-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #8065e9, #b4fa79);
+  border-radius: inherit;
+  transform: scaleX(var(--growth-progress));
+  transform-origin: left;
+}
+.marketing-site .proof-stats > .growth-scene-caption { padding: 12px 24px; margin: 0; color: #c3cedd; border: 0; }
+.insight-dashboard.growth-scene { transform: rotate(2deg) translateY(calc((1 - var(--growth-progress)) * 16px)); }
+
+@keyframes growth-signal-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 #62d87e33; }
+  50% { box-shadow: 0 0 0 6px #62d87e00; }
+}
+.growth-scene[data-growth-state="running"] .live-dot,
+.growth-scene[data-growth-state="running"] .signal-green { animation: growth-signal-pulse 1.2s ease-out 3; }
+
+@media (max-width: 900px) {
+  .proof-stats.growth-scene > .growth-scene-caption { grid-column: 1 / -1; }
+  .proof-stats.growth-scene > div:not(.growth-scene-caption) { min-width: 0; }
+}
+@media (max-width: 560px) {
+  .hero-visual.growth-scene > .growth-scene-caption { bottom: -36px; }
+  .hero-visual.growth-scene { margin-bottom: 18px; }
+  .marketing-site .proof-stats .proof-growth-track { margin-left: auto; margin-right: auto; }
+  .insight-dashboard.growth-scene { transform: translateY(calc((1 - var(--growth-progress)) * 16px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marketing-site .growth-scene { --growth-progress: 1 !important; }
+  .growth-scene *, .growth-scene *::before, .growth-scene *::after { animation: none !important; transition: none !important; }
+}

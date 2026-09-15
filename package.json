@@ -1,0 +1,51 @@
+{
+  "name": "omni-present",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Omni Present email operations platform",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "node --env-file=.env --import tsx apps/api/src/app-server.ts",
+    "dev:web": "npm --workspace @email-platform/web run dev",
+    "dev:worker": "node --env-file=.env --import tsx apps/worker/src/real-phase2-main.ts",
+    "dev:domain-worker": "node --env-file=.env --import tsx apps/worker/src/branded-domain-verification-worker.ts",
+    "dev:all": "node --env-file=.env --import tsx apps/api/src/dev-all.ts",
+    "dev:stack": "node --env-file=.env --import tsx apps/api/src/dev-stack.ts",
+    "dev:stop": "node --import tsx apps/api/src/dev-stop.ts",
+    "start": "npm run dev:api",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test:integration": "npm run build && node --test dist/tests/integration/*.test.js",
+    "check": "npm run typecheck && npm test",
+    "db:generate": "prisma generate --schema packages/persistence/prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema packages/persistence/prisma/schema.prisma",
+    "web:typecheck": "npm --workspace @email-platform/web run typecheck",
+    "web:build": "npm --workspace @email-platform/web run build"
+  },
+  "devDependencies": {
+    "@types/node": "22.0.0",
+    "prisma": "6.0.0",
+    "tsx": "4.23.12",
+    "typescript": "5.8.3"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudfront": "^3.1111.0",
+    "@aws-sdk/client-route-53": "^3.1111.0",
+    "@aws-sdk/client-ses": "3.1126.0",
+    "@aws-sdk/client-sesv2": "3.1111.0",
+    "@aws-sdk/client-sns": "3.1111.0",
+    "@prisma/client": "6.0.0",
+    "bullmq": "6.1.2",
+    "ioredis": "6.0.0",
+    "mailauth": "4.13.3",
+    "tldts": "^7.4.11"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}

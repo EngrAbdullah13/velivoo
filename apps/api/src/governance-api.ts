@@ -1,0 +1,34 @@
+import {createServer,type IncomingMessage,type ServerResponse} from 'node:http';
+import {PrismaClient} from '@prisma/client';
+import {PrismaPhase1Repository} from '../../../packages/persistence/src/prisma/phase1-repository.js';
+import {PrismaPhase4Repository} from '../../../packages/persistence/src/prisma/phase4-repository.js';
+import {Phase4Service} from '../../../packages/application/src/phase4/phase4-service.js';
+import {DevelopmentIdentityProvider} from '../../../packages/application/src/identity/development-provider.js';
+import {OidcJwtIdentityProvider} from '../../../packages/application/src/identity/oidc-jwt-provider.js';
+import type {IdentityProvider} from '../../../packages/application/src/ports/identity-provider.js';
+import {hasPermission,type Permission,type Role} from '../../../packages/domain/src/phase1/permissions.js';
+import {localSessionActor} from './local-session-auth.js';
+const db=new PrismaClient(),p1=new PrismaPhase1Repository(db),repo=new PrismaPhase4Repository(db),service=new Phase4Service(repo);
+const identity:IdentityProvider=process.env.EMAIL_PLATFORM_OIDC_ISSUER&&process.env.EMAIL_PLATFORM_OIDC_AUDIENCE?new OidcJwtIdentityProvider({issuer:process.env.EMAIL_PLATFORM_OIDC_ISSUER,audience:process.env.EMAIL_PLATFORM_OIDC_AUDIENCE}):new DevelopmentIdentityProvider();
+const port=Number(process.env.EMAIL_PLATFORM_PHASE4_API_PORT??4004),origin=process.env.EMAIL_PLATFORM_WEB_ORIGIN??'http://localhost:3000';
+function h(){return {'content-type':'application/json; charset=utf-8','access-control-allow-origin':origin,'access-control-allow-credentials':'true','access-control-allow-headers':'authorization,content-type,x-dev-user','access-control-allow-methods':'GET,POST,PATCH,OPTIONS','cache-control':'no-store'}}function send(r:ServerResponse,s:number,d:unknown){r.writeHead(s,h());r.end(JSON.stringify(d))}async function body(req:IncomingMessage){const b:Buffer[]=[];for await(const c of req)b.push(Buffer.from(c));return b.length?JSON.parse(Buffer.concat(b).toString('utf8')):{}}
+async function auth(req:IncomingMessage,w:string,p:Permission){const local=await localSessionActor(db,req);const user=local?{id:local.userId,email:local.email}:await (async()=>{const id=await identity.authenticate({authorization:req.headers.authorization,devUser:String(req.headers['x-dev-user']??'')});if(!id)throw new Error('AUTH_REQUIRED');return p1.ensureUser({provider:identity instanceof DevelopmentIdentityProvider?'development':'oidc',subject:id.subject,email:id.email,displayName:id.displayName})})();const role=await p1.findMember(w,user.id).then(member=>member?.role as Role|undefined);if(!role||!hasPermission(role,p))throw new Error('FORBIDDEN');return {user,role}}
+const server=createServer(async(req,res)=>{try{if(req.method==='OPTIONS'){res.writeHead(204,h());return res.end()}const u=new URL(req.url??'/',`http://${req.headers.host??'localhost'}`);if(u.pathname==='/health')return send(res,200,{ok:true,phase:4,status:'implementation-complete',release:'locked-until-real-evidence-and-approvals'});const m=u.pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/phase4(\/.*)?$/);if(!m)return send(res,404,{error:'NOT_FOUND'});const w=m[1]!,s=m[2]??'';await auth(req,w,'workspace.manage');
+ if(s==='/status'&&req.method==='GET')return send(res,200,await service.launchStatus());
+ if(s==='/hardening/status'&&req.method==='GET')return send(res,200,await service.hardeningStatus());
+ if(s==='/hardening-evidence'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordHardeningEvidence({checkKey:b.checkKey,status:b.status,summary:String(b.summary??''),owner:b.owner,evidence:b.evidence??{},reviewAt:b.reviewAt?new Date(b.reviewAt):undefined}))}
+ if(s==='/security-findings'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordSecurityFinding({workspaceId:w,title:String(b.title),severity:b.severity,owner:b.owner,reviewAt:b.reviewAt?new Date(b.reviewAt):undefined}))}
+ const close=s.match(/^\/security-findings\/([^/]+)\/close$/);if(close&&req.method==='POST')return send(res,200,await service.closeSecurityFinding(close[1]!));
+ if(s==='/launch-evidence'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordLaunchEvidence({area:b.area,status:b.status,summary:String(b.summary??''),approver:b.approver}))}
+ if(s==='/stop-signals'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordStopSignal({code:b.code,detail:String(b.detail??'')}))}const clear=s.match(/^\/stop-signals\/([^/]+)\/clear$/);if(clear&&req.method==='POST')return send(res,200,await service.clearStopSignal(clear[1]!));
+ if(s==='/capacity'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordCapacity({...b,startedAt:new Date(b.startedAt),finishedAt:new Date(b.finishedAt)}))}
+ if(s==='/recovery'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordRecovery(b))}
+ if(s==='/slo-observations'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordSloObservation({...b,windowStart:new Date(b.windowStart),windowEnd:new Date(b.windowEnd)}))}
+ if(s==='/migration-rehearsals'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordMigrationRehearsal({...b,startedAt:new Date(b.startedAt),finishedAt:new Date(b.finishedAt)}))}
+ const del=s.match(/^\/privacy\/profiles\/([^/]+)\/deletion$/);if(del&&req.method==='POST')return send(res,202,await service.requestDeletion(w,del[1]!));const step=s.match(/^\/privacy\/profiles\/([^/]+)\/deletion\/advance$/);if(step&&req.method==='POST'){const b=await body(req);return send(res,200,await service.advanceDeletion(w,step[1]!,b.to))}
+ if(s==='/pilot/observations'&&req.method==='POST'){const b=await body(req);return send(res,201,await service.recordPilotObservation({...b,startedAt:new Date(b.startedAt),finishedAt:new Date(b.finishedAt)}))}
+ if(s==='/pilot/start'&&req.method==='POST')return send(res,200,await service.startPilot());if(s==='/pilot/complete-stage'&&req.method==='POST')return send(res,200,await service.completePilotStage());
+ if(s==='/release/approve'&&req.method==='POST'){const b=await body(req);return send(res,200,await service.approveRelease1({approvedBy:String(b.approvedBy??''),notes:b.notes}))}
+ return send(res,404,{error:'NOT_FOUND'})
+ }catch(e){const message=e instanceof Error?e.message:'ERROR',status=message.includes('AUTH')?401:message.includes('FORBIDDEN')?403:message.includes('NOT_FOUND')?404:message.includes('GATE_BLOCKED')||message.includes('ALREADY_COMPLETED')?409:400;send(res,status,{error:message})}});
+server.listen(port,'127.0.0.1',()=>console.log(`Phase 4 hardening API: http://localhost:${port}`));for(const sig of ['SIGINT','SIGTERM'] as const)process.on(sig,async()=>{server.close();await db.$disconnect();process.exit(0)});

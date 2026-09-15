@@ -1,0 +1,202 @@
+VELIVOO AWS SETUP STEPS
+What you still need to do in AWS
+Region used in your project: eu-north-1
+
+
+PART 1 - STATIC BRANDED DNS (for Hostinger style setup)
+Only do this if you want customers to use Static Branded mode.
+Skip Part 1 if you only use Managed NS mode.
+
+
+Step 1 - Register or use a domain for Velivoo DKIM DNS
+Example name: velivoodns.com
+You can also use a subdomain on velivoo.com if you prefer.
+Buy the domain or use one you already own.
+
+
+Step 2 - Create Route 53 hosted zone
+1. Open AWS Console
+2. Go to Route 53
+3. Click Hosted zones
+4. Click Create hosted zone
+5. Enter your domain name (example: velivoodns.com)
+6. Type: Public hosted zone
+7. Click Create hosted zone
+8. Copy the Hosted zone ID (starts with Z)
+9. Save it. You will put it in VELIVOO_STATIC_DNS_ZONE_ID
+
+
+Step 3 - Point domain nameservers at Route 53
+Route 53 shows 4 nameservers for the new zone.
+Go to your domain registrar (where you bought the domain).
+Replace old nameservers with those 4 Route 53 nameservers.
+Wait until DNS propagates (can take up to 48 hours, often faster).
+
+
+Step 4 - Add these to your Velivoo .env file on the server
+VELIVOO_STATIC_DNS_DOMAIN=velivoodns.com
+VELIVOO_STATIC_DNS_ZONE_ID=Zxxxxxxxxxxxx
+VELIVOO_STATIC_BRANDED_DNS_ENABLED=true
+VELIVOO_DKIM_KEY_ENCRYPTION_SECRET=use-a-long-random-secret-here
+VELIVOO_STATIC_DKIM_DELIVERY_MODE=cname
+Restart the API after changing .env
+
+
+Step 5 - Test static mode
+1. In Velivoo add a sending domain
+2. Choose Static Branded setup
+3. Add the DNS records shown
+4. Click Recheck DNS
+5. Send one test email when domain shows READY
+
+
+PART 2 - SES PRODUCTION ACCESS (send to any email)
+Do this if SES is still in sandbox mode.
+
+
+Step 1 - Open SES
+1. AWS Console
+2. Amazon SES
+3. Make sure region is eu-north-1 (top right)
+
+
+Step 2 - Request production access
+1. Click Account dashboard
+2. Find Sending limits or Production access
+3. Click Request production access
+4. Fill the form:
+   - Mail type: Marketing or Mixed
+   - Website URL: your Velivoo site
+   - Use case: describe that customers send email from their own domains
+   - How you handle bounces and complaints: explain you use SNS feedback
+5. Submit
+6. Wait for AWS approval (can take 1 to 2 days)
+
+
+Step 3 - After approval
+You can send to any recipient without verifying each email first.
+
+
+PART 3 - SNS FEEDBACK (bounces and complaints)
+Your SNS topic already exists: Velivoo in eu-north-1.
+Make sure it is connected to Velivoo.
+
+
+Step 1 - Open SNS
+1. AWS Console
+2. Amazon SNS
+3. Region: eu-north-1
+4. Click Topics
+5. Open topic Velivoo (or your feedback topic)
+
+
+Step 2 - Add HTTPS subscription if missing
+1. Click Create subscription
+2. Protocol: HTTPS
+3. Endpoint: your public Velivoo URL plus the SNS callback path
+   Example base URL from your env: EMAIL_PLATFORM_PUBLIC_BASE_URL
+   The app receives SES events on the public API (port 4001 in production)
+4. Click Create subscription
+
+
+Step 3 - Confirm subscription
+1. Velivoo public API must be running and reachable on HTTPS
+2. AWS sends a confirmation request to your endpoint
+3. Velivoo should auto-confirm when configured correctly
+4. In SNS subscription list status must show Confirmed
+
+
+Step 4 - Allow SES to publish to the topic
+1. In SNS topic open Access policy or Edit policy
+2. SES must be allowed to publish
+3. If unsure use SNS console option to allow SES to publish events
+
+
+Step 5 - Link SES configuration set to SNS
+Velivoo creates configuration sets per workspace when domains are verified.
+When you add a domain and it becomes READY, recheck should attach SNS to the set.
+Your env already has:
+EMAIL_PLATFORM_SNS_TOPIC_ARN=arn:aws:sns:eu-north-1:833116002045:Velivoo
+
+
+PART 4 - IAM PERMISSIONS (API must write to AWS)
+Your app uses AWS keys or an IAM role.
+The user or role must be able to create and change DNS and SES resources.
+
+
+Step 1 - Open IAM
+1. AWS Console
+2. IAM
+3. Find the user or role your Velivoo server uses
+
+
+Step 2 - Attach or update policy
+Minimum actions needed:
+
+Route 53:
+- route53:CreateHostedZone
+- route53:GetHostedZone
+- route53:ListHostedZones
+- route53:ChangeResourceRecordSets
+- route53:ListResourceRecordSets
+- route53:DeleteHostedZone
+- route53:GetChange
+
+SES:
+- ses:CreateEmailIdentity
+- ses:GetEmailIdentity
+- ses:DeleteEmailIdentity
+- ses:PutEmailIdentityDkimSigningAttributes
+- ses:PutEmailIdentityMailFromAttributes
+- ses:PutEmailIdentityConfigurationSetAttributes
+- ses:CreateConfigurationSet
+- ses:GetConfigurationSet
+- ses:CreateConfigurationSetEventDestination
+- ses:UpdateConfigurationSetEventDestination
+- ses:GetAccount
+- ses:SendEmail
+- ses:SendRawEmail
+
+Classic SES (used internally):
+- ses:GetIdentityVerificationAttributes
+- ses:VerifyDomainIdentity
+
+For static mode also allow Route 53 changes on the static DNS zone only if you want tight security use a scoped policy on that zone ID.
+
+
+Step 3 - Test
+1. Add a test domain in Velivoo Managed mode
+2. If it creates the child zone and shows NS records, IAM is OK
+3. If you see AWS_ACCESS_DENIED in the app, fix IAM
+
+
+PART 5 - WHAT YOU ALREADY HAVE (no action needed)
+
+Already configured in your project:
+- Route 53 reusable delegation set
+- ns1 to ns4.velivoo.com vanity nameservers
+- SES region eu-north-1
+- SNS topic ARN
+- Managed NS domain onboarding
+- Platform tracking mode (no CloudFront needed)
+
+Customers never need their own AWS account.
+
+
+QUICK CHECKLIST
+
+Managed mode only:
+[ ] SES production access approved
+[ ] SNS subscription Confirmed
+[ ] IAM write permissions work
+[ ] Public HTTPS URL stable (not temporary ngrok for production)
+
+Managed plus Static branded:
+[ ] All of the above
+[ ] Route 53 hosted zone for static DNS domain
+[ ] Domain nameservers point to Route 53
+[ ] Static env vars set and API restarted
+[ ] One static domain tested end to end
+
+
+END

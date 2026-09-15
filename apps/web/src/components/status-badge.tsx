@@ -1,0 +1,1 @@
+export function StatusBadge({status}:{status:string}){return <span aria-label={`Status: ${status}`} className={`status-badge status-${status.toLowerCase().replaceAll("_","-")}`}>{status.replaceAll("_"," ")}</span>}

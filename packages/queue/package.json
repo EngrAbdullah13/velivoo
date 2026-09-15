@@ -1,0 +1,6 @@
+{
+  "name": "@email-platform/queue",
+  "version": "0.1.0-phase1",
+  "private": true,
+  "type": "module"
+}

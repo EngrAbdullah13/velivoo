@@ -1,0 +1,8 @@
+export const release1MetricCatalog={
+ api:['request_rate','error_rate','latency_p95'],database:['connections','slow_queries','lock_waits','replication_lag'],queue:['depth','oldest_age_seconds','throughput','retries','failures','dead_letters'],durability:['outbox_lag_seconds','inbox_lag_seconds','scheduled_action_overdue_seconds'],flow:['entry_rate','node_failure_rate'],policy:['allow_count','skip_count','hold_count'],render:['latency_ms','failure_count','message_bytes'],provider:['submission_rate','throttle_count','error_count','unknown_count'],feedback:['ingestion_lag_seconds','application_lag_seconds','bounce_rate','complaint_rate','unsubscribe_rate','delivery_rate'],segments:['projection_freshness_seconds'],files:['import_rows_per_second','export_rows_per_second','error_rate']
+} as const;
+export const release1InitialSloCatalog={
+ authenticated_api_availability:'99.9% monthly',read_api_p95_ms:'<500 ms for standard bounded queries',mutation_api_p95_ms:'<750 ms excluding asynchronous completion',accepted_event_loss:'0 acknowledged events lost under one component failure',feedback_application_p99_seconds:'<60 seconds from durable receipt',scheduled_dispatch_p99_seconds:'<60 seconds under planned load',eligible_to_provider_p95_seconds:'<120 seconds excluding quiet/rate/holds',duplicate_send_count:'0 from normal retries',segment_freshness_visible:'freshness visible; mode-specific target approved separately'
+} as const;
+export const boundedMetricLabels=['route_class','workspace_tier','provider_route','reason_code','domain_bucket'] as const;
+export const forbiddenHighCardinalityLabels=['profile_id','message_id','flow_run_id','email_address'] as const;

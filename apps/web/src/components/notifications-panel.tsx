@@ -1,0 +1,4 @@
+"use client";
+import { useEffect,useState } from "react";
+import { phase1Api } from "../lib/phase1-api";
+export function NotificationsPanel({workspaceId}:{workspaceId:string}){const [items,setItems]=useState<any[]>([]),[error,setError]=useState("");useEffect(()=>{phase1Api<any>(`/api/v1/workspaces/${workspaceId}/notifications`).then(d=>setItems(d.items??[])).catch(e=>setError(e.message))},[workspaceId]);if(error)return <div role="alert" className="panel">{error}</div>;return <div className="panel"><table><thead><tr><th>Category</th><th>Title</th><th>Message</th><th>Severity</th></tr></thead><tbody>{items.map(item=><tr key={item.id}><td>{item.category}</td><td>{item.href?<a href={item.href}>{item.title}</a>:item.title}</td><td>{item.message}</td><td>{item.severity}</td></tr>)}</tbody></table>{!items.length&&<p>No notifications.</p>}</div>}

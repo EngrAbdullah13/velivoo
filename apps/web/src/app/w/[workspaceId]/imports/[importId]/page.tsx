@@ -1,0 +1,2 @@
+import { ImportManager } from "../../../../../components/import-manager";
+export default async function ImportDetailPage({params,searchParams}:{params:Promise<{workspaceId:string;importId:string}>;searchParams:Promise<{targetListId?:string}>}){const [{workspaceId,importId},{targetListId}]=await Promise.all([params,searchParams]);return <ImportManager workspaceId={workspaceId} importId={importId} targetListId={targetListId}/>}

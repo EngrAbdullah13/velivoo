@@ -1,0 +1,53 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": true,
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "./node_modules/@types",
+      "/opt/nvm/versions/node/v22.16.0/lib/node_modules/ts-node/node_modules/@types",
+      "/opt/nvm/versions/node/v22.16.0/lib/node_modules/pptxgenjs/node_modules/@types"
+    ]
+  },
+  "include": [
+    "packages/contracts/src/**/*.ts",
+    "packages/domain/src/**/*.ts",
+    "packages/application/src/**/*.ts",
+    "packages/persistence/src/proof/**/*.ts",
+    "packages/queue/src/proof/**/*.ts",
+    "packages/email-renderer/src/**/*.ts",
+    "packages/provider-email/src/proof/**/*.ts",
+    "packages/provider-email/src/ses/sns-verifier.ts",
+    "packages/provider-email/src/ses/normalize-feedback.ts",
+    "packages/observability/src/**/*.ts",
+    "packages/config/src/**/*.ts",
+    "packages/testkit/src/**/*.ts",
+    "apps/api/src/**/*.ts",
+    "apps/public-api/src/**/*.ts",
+    "apps/worker/src/**/*.ts",
+    "apps/scheduler/src/**/*.ts",
+    "tests/*.test.ts",
+    "tests/integration/*.test.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "apps/**/real-*.ts",
+    "packages/persistence/src/prisma/**/*",
+    "packages/queue/src/bullmq/**/*",
+    "packages/provider-email/src/ses/ses-provider.ts"
+  ]
+}

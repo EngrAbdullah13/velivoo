@@ -1,0 +1,14 @@
+---
+description: Canonical Velivoo V2 domains and safe provider lifecycle
+globs: packages/domain/src/phase1/**,packages/application/src/phase1/**,packages/application/src/phase2/email-routing-service.ts,packages/provider-email/src/**,apps/worker/src/branded-domain-verification-worker.ts
+alwaysApply: false
+---
+
+Read docs/cursor-handoff/06-DOMAIN-ONBOARDING-V2.md and current service/provider code.
+V2 visible From and SES identity use customer.com. send.customer.com is infrastructure only; MAIL FROM is bounce.send.customer.com and tracking click.send.customer.com.
+Preserve provisioningVersion and V1 compatibility. Never relabel existing domains without a tested migration of DNS, identities, routes and pinned history.
+Use SES DkimAttributes.SigningHostedZone for Easy DKIM; never hard-code dkim.amazonses.com or substitute BYODKIM silently.
+Customer setup is four NS plus three root DKIM CNAME records. Preserve customer root DMARC; do not silently overwrite it.
+Preserve stable CallerReference, ownership validation, leases and retry-safe cleanup. Never delete shared delegation infrastructure or unrelated DNS.
+Enforce backend readiness and sanitize customer diagnostics; raw AWS internals and credentials are server-only.
+

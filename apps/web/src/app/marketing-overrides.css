@@ -1,0 +1,5 @@
+/* Keep the first hero message close to the navigation on wide screens. */
+.marketing-site .hero-section{align-items:start;min-height:540px;padding:18px 32px 52px}
+
+@media(max-width:900px){.marketing-site .hero-section{padding:70px 24px 64px}}
+@media(max-width:560px){.marketing-site .hero-section{padding:53px 18px 42px}}

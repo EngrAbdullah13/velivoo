@@ -1,0 +1,42 @@
+import type {PrismaClient} from '@prisma/client';
+import type {Phase4Repository} from '../../../application/src/ports/phase4-repository.js';
+import type {CapacityEvidence4} from '../../../domain/src/phase4/capacity.js';
+import type {HardeningEvidence4} from '../../../domain/src/phase4/hardening.js';
+import type {LaunchEvidence4,PilotState4,PilotStopSignal4,ReleaseState4,SecurityFinding4} from '../../../domain/src/phase4/launch.js';
+import type {MigrationRehearsal4} from '../../../domain/src/phase4/migration.js';
+import type {SloObservation4} from '../../../domain/src/phase4/operations.js';
+import type {PilotObservation4} from '../../../domain/src/phase4/pilot.js';
+import type {DeletionState4,PrivacyDeletionJob4} from '../../../domain/src/phase4/privacy.js';
+import type {RecoveryExercise4} from '../../../domain/src/phase4/recovery.js';
+export class PrismaPhase4Repository implements Phase4Repository{
+ constructor(private readonly db:PrismaClient){}
+ securityFindings=async()=>((await (this.db as any).phase4SecurityFinding.findMany({orderBy:{createdAt:'desc'}})) as SecurityFinding4[]);
+ saveSecurityFinding=async(x:SecurityFinding4)=>{await (this.db as any).phase4SecurityFinding.upsert({where:{id:x.id},create:x,update:x})};
+ hardeningEvidence=async()=>{const rows=await (this.db as any).phase4HardeningEvidence.findMany({orderBy:{recordedAt:'desc'}});return rows.map((x:any)=>({...x,evidence:x.evidenceJson})) as HardeningEvidence4[]};
+ saveHardeningEvidence=async(x:HardeningEvidence4)=>{const data={...x,evidenceJson:x.evidence};delete (data as any).evidence;await (this.db as any).phase4HardeningEvidence.upsert({where:{checkKey:x.checkKey},create:data,update:data})};
+ launchEvidence=async()=>((await (this.db as any).phase4LaunchEvidence.findMany({orderBy:{recordedAt:'desc'}})) as LaunchEvidence4[]);
+ saveLaunchEvidence=async(x:LaunchEvidence4)=>{await (this.db as any).$transaction(async(tx:any)=>{await tx.phase4LaunchEvidence.deleteMany({where:{area:x.area}});await tx.phase4LaunchEvidence.create({data:x})})};
+ stopSignals=async()=>((await (this.db as any).phase4PilotStopSignal.findMany({orderBy:{observedAt:'desc'}})) as PilotStopSignal4[]);
+ saveStopSignal=async(x:PilotStopSignal4)=>{await (this.db as any).phase4PilotStopSignal.upsert({where:{id:x.id},create:x,update:x})};
+ pilot=async()=>{const x=await (this.db as any).phase4PilotState.upsert({where:{id:'release1'},create:{id:'release1'},update:{}});return {stage:x.stage,state:x.state,startedAt:x.startedAt,completedAt:x.completedAt,holdReason:x.holdReason} as PilotState4};
+ savePilot=async(x:PilotState4)=>{await (this.db as any).phase4PilotState.upsert({where:{id:'release1'},create:{id:'release1',...x},update:x})};
+ pilotObservations=async()=>{const rows=await (this.db as any).phase4PilotObservation.findMany({orderBy:{stage:'asc'}});return rows.map((x:any)=>({...x,evidence:x.evidenceJson})) as PilotObservation4[]};
+ savePilotObservation=async(x:PilotObservation4)=>{const data={...x,evidenceJson:x.evidence};delete (data as any).evidence;await (this.db as any).phase4PilotObservation.upsert({where:{stage:x.stage},create:data,update:data})};
+ releaseState=async()=>{const x=await (this.db as any).phase4ReleaseState.upsert({where:{id:'release1'},create:{id:'release1'},update:{}});return {status:x.status,approvedAt:x.approvedAt,approvedBy:x.approvedBy,notes:x.notes} as ReleaseState4};
+ saveReleaseState=async(x:ReleaseState4)=>{await (this.db as any).phase4ReleaseState.upsert({where:{id:'release1'},create:{id:'release1',...x},update:x})};
+ capacityEvidence=async()=>((await (this.db as any).phase4CapacityEvidence.findMany({orderBy:{finishedAt:'desc'}})) as CapacityEvidence4[]);
+ saveCapacityEvidence=async(x:CapacityEvidence4)=>{await (this.db as any).phase4CapacityEvidence.upsert({where:{id:x.id},create:x,update:x})};
+ recoveryExercises=async()=>{const rows=await (this.db as any).phase4RecoveryExercise.findMany({orderBy:{finishedAt:'desc'}});return rows.map((x:any)=>({...x,evidence:x.evidenceJson})) as RecoveryExercise4[]};
+ saveRecoveryExercise=async(x:RecoveryExercise4)=>{const data={...x,evidenceJson:x.evidence};delete (data as any).evidence;await (this.db as any).phase4RecoveryExercise.upsert({where:{id:x.id},create:data,update:data})};
+ sloObservations=async()=>{const rows=await (this.db as any).phase4SloObservation.findMany({orderBy:{recordedAt:'desc'}});return rows.map((x:any)=>({...x,observed:x.observedJson?.value,evidence:x.evidenceJson})) as SloObservation4[]};
+ saveSloObservation=async(x:SloObservation4)=>{await (this.db as any).phase4SloObservation.upsert({where:{id:x.id},create:{id:x.id,indicator:x.indicator,windowStart:x.windowStart,windowEnd:x.windowEnd,observedJson:{value:x.observed},objective:x.objective,passed:x.passed,evidenceJson:x.evidence,recordedAt:x.recordedAt},update:{indicator:x.indicator,windowStart:x.windowStart,windowEnd:x.windowEnd,observedJson:{value:x.observed},objective:x.objective,passed:x.passed,evidenceJson:x.evidence,recordedAt:x.recordedAt}})};
+ migrationRehearsals=async()=>{const rows=await (this.db as any).phase4MigrationRehearsal.findMany({orderBy:{finishedAt:'desc'}});return rows.map((x:any)=>({...x,evidence:x.evidenceJson})) as MigrationRehearsal4[]};
+ saveMigrationRehearsal=async(x:MigrationRehearsal4)=>{const data={...x,evidenceJson:x.evidence};delete (data as any).evidence;await (this.db as any).phase4MigrationRehearsal.upsert({where:{id:x.id},create:data,update:data})};
+ deletionJob=async(w:string,p:string)=>{const x=await (this.db as any).phase4PrivacyDeletionJob.findFirst({where:{workspaceId:w,profileId:p},orderBy:{requestedAt:'desc'}});return x as PrivacyDeletionJob4|null};
+ saveDeletionJob=async(x:PrivacyDeletionJob4)=>{await (this.db as any).phase4PrivacyDeletionJob.upsert({where:{id:x.id},create:x,update:x})};
+ placeProfileDeletionHold=async(w:string,p:string)=>{const existing=await (this.db as any).suppression.findFirst({where:{workspaceId:w,profileId:p,reason:'privacy_deletion',revokedAt:null}});if(!existing)await (this.db as any).suppression.create({data:{workspaceId:w,profileId:p,channel:'email',scope:'global',reason:'privacy_deletion',source:'phase4_privacy',protected:true,metadataJson:{phase4:true}}})};
+ cancelPendingMarketing=async(w:string,p:string)=>{const now=new Date(),m=await (this.db as any).message.updateMany({where:{workspaceId:w,profileId:p,state:{in:['created','evaluating','eligible','held','rendered','queued']}},data:{state:'cancelled',finalAt:now}});const runs=await (this.db as any).flowRun.findMany({where:{workspaceId:w,profileId:p,state:{in:['active','waiting','held','failed']}},select:{id:true}});if(runs.length){const ids=runs.map((x:any)=>x.id);await (this.db as any).scheduledAction.updateMany({where:{workspaceId:w,aggregateId:{in:ids},state:{notIn:['completed','cancelled']}},data:{state:'cancelled',completedAt:now}});await (this.db as any).flowRun.updateMany({where:{workspaceId:w,id:{in:ids}},data:{state:'cancelled',endedAt:now,exitReason:'PRIVACY_DELETION'}})}return m.count};
+ performDeletionStep=async(job:PrivacyDeletionJob4,to:DeletionState4)=>{const x=await (this.db as any).phase4PrivacyDeletionJob.update({where:{id:job.id},data:{state:to,updatedAt:new Date()}});return x as PrivacyDeletionJob4};
+ phase2ExternalPassed=async()=>{const keys=['verified_custom_domain','controlled_submission','provider_feedback','message_trace','operational_hold_exercised'];const rows=await (this.db as any).phase2GateEvidence.findMany({where:{checkKey:{in:keys},status:'passed'}});return new Set(rows.map((x:any)=>x.checkKey)).size===keys.length};
+ phase3RealPassed=async()=>{const keys=['phase3_infrastructure','exact_once_entry','durable_lease_recovery','single_business_message','pause_resume_counts','inspectable_run_trace'];const rows=await (this.db as any).phase3GateEvidence.findMany({where:{checkKey:{in:keys},status:'passed'}});return new Set(rows.map((x:any)=>x.checkKey)).size===keys.length};
+}

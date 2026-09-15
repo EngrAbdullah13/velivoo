@@ -1,0 +1,2 @@
+export interface Phase3ActivationContext { mode:'non_sending'|'production'; phase2ExternalGatePassed:boolean; graphValid:boolean; readiness:boolean }
+export function assertFlowActivationAllowed(c:Phase3ActivationContext){if(!c.graphValid)throw new Error('FLOW_VALIDATION_FAILED');if(c.mode==='production'&&!c.phase2ExternalGatePassed)throw new Error('PHASE2_EXTERNAL_GATE_REQUIRED');if(c.mode==='production'&&!c.readiness)throw new Error('PRODUCTION_READINESS_REQUIRED')}
