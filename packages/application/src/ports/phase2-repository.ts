@@ -4,7 +4,7 @@ import type { SendPolicyConfig } from "../../../domain/src/phase2/send-policy.js
 
 export interface P2Profile {id:string;workspaceId:string;normalizedEmail:string;originalEmail:string;firstName?:string|null;lastName?:string|null;timezone?:string|null}
 export interface P2EventSample { id:string; eventName:string; schemaVersion:number; occurredAt:Date; properties:Record<string,unknown> }
-export interface P2EmailTemplate { id:string; workspaceId:string; name:string; category:string|null; document:StructuredEmailDocument; subject:string; preheader:string; plainText:string; settings:Record<string,unknown>|null; templateType:string; importMethod:string|null; originalFilename:string|null; originalSourceHtml:string|null; sanitizedHtml:string|null; conversionStatus:string; importWarnings:Array<{code:string;severity:"warning"|"error";message:string}>|null; importedAt:Date|null; importedByUserId:string|null; archivedAt:Date|null; createdAt:Date; updatedAt:Date }
+export interface P2EmailTemplate { id:string; workspaceId:string; name:string; category:string|null; document:StructuredEmailDocument; subject:string; preheader:string; plainText:string; settings:Record<string,unknown>|null; editorType:string|null; sourceType:string|null; templateType:string; importMethod:string|null; originalFilename:string|null; originalSourceHtml:string|null; sanitizedHtml:string|null; conversionStatus:string; importWarnings:Array<{code:string;severity:"warning"|"error";message:string}>|null; importedAt:Date|null; importedByUserId:string|null; createdById:string|null; updatedById:string|null; archivedAt:Date|null; createdAt:Date; updatedAt:Date }
 export interface P2UniversalBlock {id:string;workspaceId:string;name:string;category:string|null;blocks:StructuredEmailDocument["blocks"];archivedAt:Date|null;createdAt:Date;updatedAt:Date}
 export interface P2MediaAsset {id:string;workspaceId:string;name:string;url:string;altText:string;mimeType:string;archivedAt:Date|null;createdAt:Date;updatedAt:Date}
 export interface P2BrandKit {workspaceId:string;logoUrl:string|null;primaryColor:string;secondaryColor:string;fontFamily:string;updatedAt:Date}
@@ -53,9 +53,9 @@ export interface Phase2Repository {
   emailDependencies(workspaceId:string,emailId:string):Promise<any[]>;
   listEmailTemplates(workspaceId:string,input:P2TemplateLibraryInput):Promise<P2TemplateLibraryPage>;
   emailTemplate(workspaceId:string,templateId:string,input?:{includeArchived?:boolean}):Promise<P2EmailTemplate|null>;
-  createEmailTemplate(input:{workspaceId:string;name:string;category?:string;document:StructuredEmailDocument;subject:string;preheader:string;plainText:string;settings?:Record<string,unknown>;actorId:string}):Promise<P2EmailTemplate>;
+  createEmailTemplate(input:{workspaceId:string;name:string;category?:string;document:StructuredEmailDocument;subject:string;preheader:string;plainText:string;settings?:Record<string,unknown>;editorType?:"visual"|"html"|"text";sourceType?:string;actorId:string}):Promise<P2EmailTemplate>;
   createImportedEmailTemplate(input:{workspaceId:string;name:string;category?:string;document:StructuredEmailDocument;subject:string;preheader:string;plainText:string;settings?:Record<string,unknown>;actorId:string;templateType:string;importMethod:string;originalFilename:string|null;originalSourceHtml:string; sanitizedHtml:string;conversionStatus:string;importWarnings:P2EmailTemplate["importWarnings"];importedAt:Date;importedByUserId:string}):Promise<P2EmailTemplate>;
-  updateEmailTemplate(input:{workspaceId:string;templateId:string;name?:string;category?:string|null;document?:StructuredEmailDocument;subject?:string;preheader?:string;plainText?:string;settings?:Record<string,unknown>|null;originalSourceHtml?:string|null;sanitizedHtml?:string|null;conversionStatus?:string;templateType?:string;importWarnings?:P2EmailTemplate["importWarnings"]}):Promise<P2EmailTemplate>;
+  updateEmailTemplate(input:{workspaceId:string;templateId:string;name?:string;category?:string|null;document?:StructuredEmailDocument;subject?:string;preheader?:string;plainText?:string;settings?:Record<string,unknown>|null;originalSourceHtml?:string|null;sanitizedHtml?:string|null;conversionStatus?:string;templateType?:string;importWarnings?:P2EmailTemplate["importWarnings"];actorId?:string}):Promise<P2EmailTemplate>;
   archiveEmailTemplate(input:{workspaceId:string;templateId:string;archived:boolean}):Promise<P2EmailTemplate>;
   listUniversalBlocks(workspaceId:string,input:{archived?:boolean}):Promise<P2UniversalBlock[]>;
   createUniversalBlock(input:{workspaceId:string;name:string;category?:string;blocks:StructuredEmailDocument["blocks"];actorId:string}):Promise<P2UniversalBlock>;
@@ -103,8 +103,9 @@ export interface Phase2Repository {
   updateAttempt(input:{workspaceId:string;attemptId:string;state:string;providerMessageId?:string;errorCode?:string}):Promise<void>;
   attemptByProviderMessageId(providerMessageId:string):Promise<P2DeliveryAttempt|null>;
   feedbackAuthority?(provider:string,providerMessageId:string):Promise<{attempt:P2DeliveryAttempt;message:P2Message;route:P2DeliveryRoute|null}|null>;
-  reserveDeliveryCapacity?(input:{workspaceId:string;route:P2DeliveryRoute;messageId:string;now:Date}):Promise<boolean>;
+  reserveDeliveryCapacity?(input:{workspaceId:string;route?:P2DeliveryRoute;messageId:string;now:Date}):Promise<boolean>;
 
+  recordControlledSubmissionGate?(input:{workspaceId:string;messageId:string}):Promise<void>;
   recordDeliveryEvent(input:{workspaceId:string;messageId:string;provider:string;providerEventId:string;eventType:string;occurredAt:Date;payload:unknown}):Promise<boolean>;
   createProtectedSuppression(input:{workspaceId:string;profileId:string;reason:"hard_bounce"|"complaint";sourceReference:string}):Promise<void>;
   createTrackingLink(input:{workspaceId:string;messageId:string;destination:string;destinationHash:string}):Promise<P2TrackingLink>;

@@ -1,50 +1,161 @@
 'use client';
-
-import {useEffect,useMemo,useState} from 'react';
-import {phase3Api} from '../../lib/phase3-api';
-
-type Flow={id:string;name:string;status:string;activeVersionId?:string;rowVersion:number;updatedAt:string;trigger:{type:string;summary:string};metrics:{active:number;waiting:number;held:number;entered:number;completed:number;delivered:number;errors:number};validation?:{state:string;issues:Array<{message:string;nodeId?:string}>}|null;capabilities:{canWrite:boolean;canActivate?:boolean}};
-type Overview={activeFlows:number;draftFlows:number;activeRuns:number;needsAttention:number;statusCounts?:Record<string,number>};
-type ListResponse={items:Flow[];nextCursor:string|null;total:number;statusCounts:Record<string,number>};
-type Recipe={id:string;name:string;description:string;graph:unknown};
-
-const end={id:'end',type:'end'};
-const recipes:Recipe[]=[
- {id:'quick-test',name:'Quick email test',description:'The fastest path: pick a trigger, choose a template, validate, and send a test.',graph:{schemaVersion:1,trigger:{type:'manual_test'},nodes:[{id:'email-1',type:'email',emailVersionId:'',mode:'test'},end],edges:[{from:'trigger',to:'email-1'},{from:'email-1',to:'end'}],entryPolicy:{mode:'once'},entryFilters:[],exitRules:[]}},
- {id:'blank',name:'Start from scratch',description:'Begin with an empty journey and choose a trigger in the builder.',graph:{schemaVersion:1,trigger:{type:'manual_test'},nodes:[{id:'email-1',type:'email',emailVersionId:'',mode:'test'},end],edges:[{from:'trigger',to:'email-1'},{from:'email-1',to:'end'}],entryPolicy:{mode:'once'},entryFilters:[],exitRules:[]}},
- {id:'welcome',name:'Welcome series',description:'A list join starts a welcome email journey.',graph:{schemaVersion:1,trigger:{type:'list_joined',listId:''},nodes:[{id:'welcome-email',type:'email',emailVersionId:'',mode:'live'},end],edges:[{from:'trigger',to:'welcome-email'},{from:'welcome-email',to:'end'}],entryPolicy:{mode:'once'},entryFilters:[],exitRules:[]}},
- {id:'abandoned-checkout',name:'Abandoned checkout',description:'Start from a real checkout event and follow up after a delay.',graph:{schemaVersion:1,trigger:{type:'generic_event',eventName:'checkout.abandoned',schemaVersion:1},nodes:[{id:'checkout-delay',type:'delay',durationSeconds:86400},{id:'checkout-email',type:'email',emailVersionId:'',mode:'live'},end],edges:[{from:'trigger',to:'checkout-delay'},{from:'checkout-delay',to:'checkout-email'},{from:'checkout-email',to:'end'}],entryPolicy:{mode:'once_per_event'},entryFilters:[],exitRules:[]}},
- {id:'browse',name:'Browse abandonment',description:'Start from a product-view event and add your recovery content.',graph:{schemaVersion:1,trigger:{type:'generic_event',eventName:'product.viewed',schemaVersion:1},nodes:[{id:'browse-delay',type:'delay',durationSeconds:86400},{id:'browse-email',type:'email',emailVersionId:'',mode:'live'},end],edges:[{from:'trigger',to:'browse-delay'},{from:'browse-delay',to:'browse-email'},{from:'browse-email',to:'end'}],entryPolicy:{mode:'once_per_event'},entryFilters:[],exitRules:[]}},
- {id:'post-purchase',name:'Post-purchase follow-up',description:'Start from a placed-order event and select the thank-you content.',graph:{schemaVersion:1,trigger:{type:'generic_event',eventName:'order.placed',schemaVersion:1},nodes:[{id:'purchase-delay',type:'delay',durationSeconds:604800},{id:'purchase-email',type:'email',emailVersionId:'',mode:'live'},end],edges:[{from:'trigger',to:'purchase-delay'},{from:'purchase-delay',to:'purchase-email'},{from:'purchase-email',to:'end'}],entryPolicy:{mode:'once_per_event'},entryFilters:[],exitRules:[]}},
- {id:'winback',name:'Win-back campaign',description:'A reusable event-driven re-engagement draft.',graph:{schemaVersion:1,trigger:{type:'generic_event',eventName:'customer.inactive',schemaVersion:1},nodes:[{id:'winback-email',type:'email',emailVersionId:'',mode:'live'},end],edges:[{from:'trigger',to:'winback-email'},{from:'winback-email',to:'end'}],entryPolicy:{mode:'cooldown',cooldownSeconds:2592000},entryFilters:[],exitRules:[]}},
- {id:'birthday',name:'Birthday / anniversary',description:'Schedule an email from a typed customer date property.',graph:{schemaVersion:1,trigger:{type:'profile_date',field:'',hour:9,minute:0,timezonePolicy:'profile_then_workspace'},nodes:[{id:'date-email',type:'email',emailVersionId:'',mode:'live'},end],edges:[{from:'trigger',to:'date-email'},{from:'date-email',to:'end'}],entryPolicy:{mode:'once_per_event'},entryFilters:[],exitRules:[]}},
- {id:'nurture',name:'List signup nurture',description:'A list-triggered email, delay, and follow-up sequence.',graph:{schemaVersion:1,trigger:{type:'list_joined',listId:''},nodes:[{id:'nurture-email-1',type:'email',emailVersionId:'',mode:'live'},{id:'nurture-delay',type:'delay',durationSeconds:172800},{id:'nurture-email-2',type:'email',emailVersionId:'',mode:'live'},end],edges:[{from:'trigger',to:'nurture-email-1'},{from:'nurture-email-1',to:'nurture-delay'},{from:'nurture-delay',to:'nurture-email-2'},{from:'nurture-email-2',to:'end'}],entryPolicy:{mode:'once'},entryFilters:[],exitRules:[]}},
+import { useEffect, useMemo, useState } from 'react';
+import { phase3Api } from '../../lib/phase3-api';
+type Flow = {
+    id: string;
+    name: string;
+    status: string;
+    activeVersionId?: string;
+    rowVersion: number;
+    updatedAt: string;
+    trigger: {
+        type: string;
+        summary: string;
+    };
+    metrics: {
+        active: number;
+        waiting: number;
+        held: number;
+        entered: number;
+        completed: number;
+        delivered: number;
+        errors: number;
+    };
+    validation?: {
+        state: string;
+        issues: Array<{
+            message: string;
+            nodeId?: string;
+        }>;
+    } | null;
+    capabilities: {
+        canWrite: boolean;
+        canActivate?: boolean;
+    };
+};
+type Overview = {
+    activeFlows: number;
+    draftFlows: number;
+    activeRuns: number;
+    needsAttention: number;
+    statusCounts?: Record<string, number>;
+};
+type ListResponse = {
+    items: Flow[];
+    nextCursor: string | null;
+    total: number;
+    statusCounts: Record<string, number>;
+};
+type Recipe = {
+    id: string;
+    name: string;
+    description: string;
+    graph: unknown;
+};
+const end = { id: 'end', type: 'end' };
+const recipes: Recipe[] = [
+    { id: 'quick-test', name: 'Quick email test', description: 'The fastest path: pick a trigger, choose a template, validate, and send a test.', graph: { schemaVersion: 1, trigger: { type: 'manual_test' }, nodes: [{ id: 'email-1', type: 'email', emailVersionId: '', mode: 'test' }, end], edges: [{ from: 'trigger', to: 'email-1' }, { from: 'email-1', to: 'end' }], entryPolicy: { mode: 'once' }, entryFilters: [], exitRules: [] } },
+    { id: 'blank', name: 'Start from scratch', description: 'Choose the trigger and add each journey step yourself.', graph: { schemaVersion: 1, trigger: { type: 'unconfigured' }, nodes: [end], edges: [{ from: 'trigger', to: 'end' }], entryPolicy: { mode: 'once_per_event' }, entryFilters: [], exitRules: [] } },
+    { id: 'welcome', name: 'Welcome series', description: 'A list join starts a welcome email journey.', graph: { schemaVersion: 1, trigger: { type: 'list_joined', listId: '', enrollmentMode: 'future_only' }, nodes: [{ id: 'welcome-email', type: 'email', emailVersionId: '', mode: 'live' }, end], edges: [{ from: 'trigger', to: 'welcome-email' }, { from: 'welcome-email', to: 'end' }], entryPolicy: { mode: 'once' }, entryFilters: [], exitRules: [] } },
+    { id: 'abandoned-checkout', name: 'Abandoned checkout', description: 'Start from a real checkout event and follow up after a delay.', graph: { schemaVersion: 1, trigger: { type: 'generic_event', eventName: 'checkout.abandoned', schemaVersion: 1 }, nodes: [{ id: 'checkout-delay', type: 'delay', durationSeconds: 86400 }, { id: 'checkout-email', type: 'email', emailVersionId: '', mode: 'live' }, end], edges: [{ from: 'trigger', to: 'checkout-delay' }, { from: 'checkout-delay', to: 'checkout-email' }, { from: 'checkout-email', to: 'end' }], entryPolicy: { mode: 'once_per_event' }, entryFilters: [], exitRules: [] } },
+    { id: 'browse', name: 'Browse abandonment', description: 'Start from a product-view event and add your recovery content.', graph: { schemaVersion: 1, trigger: { type: 'generic_event', eventName: 'product.viewed', schemaVersion: 1 }, nodes: [{ id: 'browse-delay', type: 'delay', durationSeconds: 86400 }, { id: 'browse-email', type: 'email', emailVersionId: '', mode: 'live' }, end], edges: [{ from: 'trigger', to: 'browse-delay' }, { from: 'browse-delay', to: 'browse-email' }, { from: 'browse-email', to: 'end' }], entryPolicy: { mode: 'once_per_event' }, entryFilters: [], exitRules: [] } },
+    { id: 'post-purchase', name: 'Post-purchase follow-up', description: 'Start from a placed-order event and select the thank-you content.', graph: { schemaVersion: 1, trigger: { type: 'generic_event', eventName: 'order.placed', schemaVersion: 1 }, nodes: [{ id: 'purchase-delay', type: 'delay', durationSeconds: 604800 }, { id: 'purchase-email', type: 'email', emailVersionId: '', mode: 'live' }, end], edges: [{ from: 'trigger', to: 'purchase-delay' }, { from: 'purchase-delay', to: 'purchase-email' }, { from: 'purchase-email', to: 'end' }], entryPolicy: { mode: 'once_per_event' }, entryFilters: [], exitRules: [] } },
+    { id: 'winback', name: 'Win-back campaign', description: 'A reusable event-driven re-engagement draft.', graph: { schemaVersion: 1, trigger: { type: 'generic_event', eventName: 'customer.inactive', schemaVersion: 1 }, nodes: [{ id: 'winback-email', type: 'email', emailVersionId: '', mode: 'live' }, end], edges: [{ from: 'trigger', to: 'winback-email' }, { from: 'winback-email', to: 'end' }], entryPolicy: { mode: 'cooldown', cooldownSeconds: 2592000 }, entryFilters: [], exitRules: [] } },
+    { id: 'birthday', name: 'Birthday / anniversary', description: 'Schedule an email from a typed customer date property.', graph: { schemaVersion: 1, trigger: { type: 'profile_date', field: '', hour: 9, minute: 0, timezonePolicy: 'profile_then_workspace' }, nodes: [{ id: 'date-email', type: 'email', emailVersionId: '', mode: 'live' }, end], edges: [{ from: 'trigger', to: 'date-email' }, { from: 'date-email', to: 'end' }], entryPolicy: { mode: 'once_per_event' }, entryFilters: [], exitRules: [] } },
+    { id: 'nurture', name: 'List signup nurture', description: 'A list-triggered email, delay, and follow-up sequence.', graph: { schemaVersion: 1, trigger: { type: 'list_joined', listId: '', enrollmentMode: 'future_only' }, nodes: [{ id: 'nurture-email-1', type: 'email', emailVersionId: '', mode: 'live' }, { id: 'nurture-delay', type: 'delay', durationSeconds: 172800 }, { id: 'nurture-email-2', type: 'email', emailVersionId: '', mode: 'live' }, end], edges: [{ from: 'trigger', to: 'nurture-email-1' }, { from: 'nurture-email-1', to: 'nurture-delay' }, { from: 'nurture-delay', to: 'nurture-email-2' }, { from: 'nurture-email-2', to: 'end' }], entryPolicy: { mode: 'once' }, entryFilters: [], exitRules: [] } },
 ];
-const tabs=[['all','All'],['active','Active'],['paused','Paused'],['draft','Draft'],['attention','Needs attention'],['archived','Archived']] as const;
-const statusDot=(flow:Flow)=>flow.status==='active'?'green':flow.status==='paused'?'amber':flow.validation?.state==='blocking'?'red':'grey';
-const statusLabel=(flow:Flow)=>flow.validation?.state==='blocking'?'Needs attention':flow.status==='testing'?'Testing':flow.status[0]?.toUpperCase()+flow.status.slice(1);
-const time=(value:string)=>new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(value));
-
-export function FlowManager({workspaceId}:{workspaceId:string}){
- const [items,setItems]=useState<Flow[]>([]),[overview,setOverview]=useState<Overview|null>(null),[query,setQuery]=useState(''),[tab,setTab]=useState('all'),[trigger,setTrigger]=useState('all'),[status,setStatus]=useState('all'),[health,setHealth]=useState('all'),[message,setMessage]=useState(''),[loading,setLoading]=useState(true),[createOpen,setCreateOpen]=useState(false),[templateOpen,setTemplateOpen]=useState(false),[name,setName]=useState(''),[recipeId,setRecipeId]=useState('quick-test'),[cursor,setCursor]=useState<string|undefined>(),[cursorHistory,setCursorHistory]=useState<string[]>([]),[nextCursor,setNextCursor]=useState<string|null>(null),[total,setTotal]=useState(0),[pageSize,setPageSize]=useState(15),[menu,setMenu]=useState<string|null>(null);
- const recipe=recipes.find(item=>item.id===recipeId)??recipes[0]!;
- const activeStatus=tab==='all'?status:tab;
- const count=(key:string)=>overview?.statusCounts?.[key]??(key==='active'?overview?.activeFlows:key==='draft'?overview?.draftFlows:key==='attention'?overview?.needsAttention:0)??0;
- async function load(next?:string,reset=false){setLoading(true);try{const p=new URLSearchParams({limit:String(pageSize)});const effective=reset?undefined:next??cursor;if(query.trim())p.set('q',query.trim());if(activeStatus!=='all')p.set('status',activeStatus);if(trigger!=='all')p.set('trigger',trigger);if(health!=='all')p.set('health',health);if(effective)p.set('cursor',effective);const [flows,summary]=await Promise.all([phase3Api<ListResponse>(`/api/v1/workspaces/${workspaceId}/flows?${p}`),phase3Api<Overview>(`/api/v1/workspaces/${workspaceId}/flows/overview`)]);setItems(flows.items);setNextCursor(flows.nextCursor);setTotal(flows.total);setOverview({...summary,statusCounts:flows.statusCounts??summary.statusCounts});setCursor(effective);setMessage('')}catch(error){setMessage(error instanceof Error?error.message:'Unable to load flows.')}finally{setLoading(false)}}
- useEffect(()=>{setCursor(undefined);setCursorHistory([]);void load(undefined,true)},[workspaceId,activeStatus,trigger,health,pageSize]);
- const visibleStart=total?cursorHistory.length*pageSize+1:0,visibleEnd=Math.min(cursorHistory.length*pageSize+items.length,total),pages=Math.max(1,Math.ceil(total/pageSize));
- async function create(){if(!name.trim())return;try{const flow=await phase3Api<Flow>(`/api/v1/workspaces/${workspaceId}/flows`,{method:'POST',body:JSON.stringify({name:name.trim(),graph:recipe.graph})});window.location.href=`/w/${workspaceId}/flows/${flow.id}/builder`}catch(error){setMessage(error instanceof Error?error.message:'Unable to create flow.')}}
- async function duplicate(flow:Flow){try{const copy=await phase3Api<Flow>(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/duplicate`,{method:'POST',body:JSON.stringify({name:`${flow.name} copy`})});window.location.href=`/w/${workspaceId}/flows/${copy.id}/builder`}catch(error){setMessage(error instanceof Error?error.message:'Unable to duplicate flow.')}}
- async function archive(flow:Flow){if(!confirm(`Archive ${flow.name}? Existing run history will remain available.`))return;try{await phase3Api(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/archive`,{method:'POST',body:'{}'});await load(undefined,true)}catch(error){setMessage(error instanceof Error?error.message:'Unable to archive flow.')}}
- async function changeState(flow:Flow){try{if(flow.status==='active')await phase3Api(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/pause`,{method:'POST',body:JSON.stringify({mode:'pause_future_actions'})});else if(flow.status==='paused')await phase3Api(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/resume`,{method:'POST',body:JSON.stringify({overduePolicy:'immediate'})});else {window.location.href=`/w/${workspaceId}/flows/${flow.id}/builder`;return}await load()}catch(error){setMessage(error instanceof Error?error.message:'Unable to update flow state.')}}
- const options=useMemo(()=>recipes.filter(item=>item.id!=='blank'),[]);
- return <div className="flow-manager flow-list-modern">
-  <header className="flow-list-hero"><div><h1>Flows</h1><p>Build automated customer journeys that react to real customer behaviour.</p></div><button type="button" className="flow-dark-button" onClick={()=>setCreateOpen(true)}>+ Create flow</button></header>
-  <nav className="flow-tabs" aria-label="Flow status">{tabs.map(([key,label])=><button type="button" key={key} className={tab===key?'active':''} onClick={()=>setTab(key)}>{label} <span>{key==='all'?count('all'):count(key)}</span></button>)}</nav>
-  <section className="flow-filter-row" aria-label="Flow filters"><label className="flow-search"><span aria-hidden="true">⌕</span><input value={query} placeholder="Search flows" aria-label="Search flows" onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){setCursorHistory([]);void load(undefined,true)}}}/></label><select value={trigger} aria-label="Trigger" onChange={event=>setTrigger(event.target.value)}><option value="all">Trigger</option><option value="list_joined">Contact added to list</option><option value="segment_entered">Contact enters a segment</option><option value="generic_event">Event / API event</option><option value="profile_date">Date property</option><option value="manual_test">Manual test</option></select><select value={status} aria-label="Status" onChange={event=>{setTab('all');setStatus(event.target.value)}}><option value="all">Status</option><option value="draft">Draft</option><option value="testing">Testing</option><option value="active">Active</option><option value="paused">Paused</option><option value="archived">Archived</option></select><select value={health} aria-label="Health" onChange={event=>setHealth(event.target.value)}><option value="all">Health</option><option value="healthy">Healthy</option><option value="attention">Needs attention</option></select><button type="button" className="flow-filter-apply" onClick={()=>{setCursorHistory([]);void load(undefined,true)}} disabled={loading}>Apply</button></section>
-  {message&&<p className="flow-message" role="status">{message}</p>}
-  <section className="flow-list-results" aria-live="polite">{loading&&!items.length?<div className="flow-list-loading"><span/><span/><span/></div>:items.map(flow=><article key={flow.id} className="flow-list-card"><button type="button" className="flow-card-main" onClick={()=>window.location.href=`/w/${workspaceId}/flows/${flow.id}/builder`} aria-label={`Open ${flow.name}`}><strong>{flow.name}</strong><small>#{flow.id.slice(0,8)} · {flow.activeVersionId?'Published version':'Draft version'} · Last edited {time(flow.updatedAt)}</small><span className="flow-card-trigger">{flow.trigger.summary||'Trigger not configured'}</span><span className={`flow-status-line ${statusDot(flow)}`}><i/>{statusLabel(flow)}</span>{flow.validation?.state==='blocking'&&<em>{flow.validation.issues[0]?.message??'Validation needs attention'}</em>}</button><dl className="flow-row-metrics"><div><dt>Active now</dt><dd>{flow.metrics.active??0}</dd></div><div><dt>Entered</dt><dd>{flow.metrics.entered??0}</dd></div><div><dt>Completed</dt><dd>{flow.metrics.completed??0}</dd></div><div><dt>Delivered</dt><dd>{flow.metrics.delivered??0}</dd></div><div><dt>Failed / suspended</dt><dd>{(flow.metrics.errors??0)+(flow.metrics.held??0)}</dd></div></dl><div className="flow-card-actions"><button type="button" className="flow-icon-action" title={flow.status==='active'?'Pause flow':flow.status==='paused'?'Resume flow':'Open flow'} aria-label={flow.status==='active'?'Pause flow':flow.status==='paused'?'Resume flow':'Open flow'} onClick={()=>void changeState(flow)}>{flow.status==='active'?'Ⅱ':flow.status==='paused'?'▶':'↗'}</button><button type="button" className="flow-icon-action" aria-label={`More actions for ${flow.name}`} aria-expanded={menu===flow.id} onClick={()=>setMenu(menu===flow.id?null:flow.id)}>•••</button>{menu===flow.id&&<div className="flow-action-menu"><button type="button" onClick={()=>window.location.href=`/w/${workspaceId}/flows/${flow.id}/builder`}>Edit</button><button type="button" onClick={()=>void duplicate(flow)}>Duplicate</button><button type="button" onClick={()=>void archive(flow)} disabled={flow.status==='archived'}>Archive</button><span title="Flows with retained versions and run history are archived instead of permanently deleted.">Delete unavailable</span></div>}</div></article>)}{!loading&&!items.length&&<div className="flow-empty"><h2>{query||trigger!=='all'||health!=='all'||activeStatus!=='all'?'No flows match these filters':'No flows yet'}</h2><p>{query||trigger!=='all'||health!=='all'||activeStatus!=='all'?'Try changing a filter or search term.':'Create your first customer journey from scratch or start with a reusable template.'}</p><div><button type="button" className="flow-dark-button" onClick={()=>{setRecipeId('blank');setCreateOpen(true)}}>Create from scratch</button><button type="button" className="flow-quiet-button" onClick={()=>setTemplateOpen(true)}>Start with a template</button></div></div>}</section>
-  <footer className="flow-pagination"><label>Rows per page <select value={pageSize} onChange={event=>setPageSize(Number(event.target.value))}><option value="15">15</option><option value="30">30</option><option value="50">50</option></select></label><span>{visibleStart}-{visibleEnd} of {total} · Page {cursorHistory.length+1} of {pages}</span><div><button type="button" aria-label="Previous page" disabled={!cursorHistory.length||loading} onClick={()=>{const previous=cursorHistory.at(-1);setCursorHistory(old=>old.slice(0,-1));void load(previous,true)}}>‹</button><button type="button" aria-label="Next page" disabled={!nextCursor||loading} onClick={()=>{if(nextCursor){setCursorHistory(old=>[...old,cursor??'']);void load(nextCursor)}}}>›</button></div></footer>
-  {(createOpen||templateOpen)&&<div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-flow-title"><section className="modal-card flow-create-modal"><div className="modal-head"><div><h2 id="create-flow-title">Create a flow</h2><p>Configure your trigger and email, validate, then activate in one step.</p></div><button type="button" aria-label="Close" onClick={()=>{setCreateOpen(false);setTemplateOpen(false)}}>×</button></div>{!templateOpen?<><div className="flow-create-choice"><button type="button" className={recipeId==='quick-test'?'selected':''} onClick={()=>setRecipeId('quick-test')}><strong>Quick email test (Recommended)</strong><span>Trigger → Email → End. Validate and send a test in minutes.</span></button><button type="button" className={recipeId==='blank'?'selected':''} onClick={()=>setRecipeId('blank')}><strong>Start from scratch</strong><span>Same simple start, rename it if you prefer.</span></button><button type="button" onClick={()=>setTemplateOpen(true)}><strong>Use a template</strong><span>Multi-step journeys like welcome series or win-back.</span></button></div><label>Flow name<input autoFocus value={name} placeholder="e.g. Welcome journey" onChange={event=>setName(event.target.value)}/></label><footer><button type="button" className="flow-quiet-button" onClick={()=>setTemplateOpen(true)}>Browse templates</button><button type="button" className="flow-dark-button" disabled={!name.trim()} onClick={()=>void create()}>Create flow</button></footer></>:<><div className="flow-template-grid">{options.map(item=><button type="button" className={item.id===recipeId?'selected':''} key={item.id} onClick={()=>{setRecipeId(item.id);setTemplateOpen(false);setCreateOpen(true)}}><strong>{item.name}</strong><span>{item.description}</span></button>)}</div><footer><button type="button" className="flow-quiet-button" onClick={()=>{setTemplateOpen(false);setCreateOpen(true)}}>Back</button></footer></>}</section></div>}
+const tabs = [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['draft', 'Draft'], ['attention', 'Needs attention'], ['archived', 'Archived']] as const;
+const statusDot = (flow: Flow) => flow.status === 'active' ? 'green' : flow.status === 'paused' ? 'amber' : flow.validation?.state === 'blocking' ? 'red' : 'grey';
+const statusLabel = (flow: Flow) => flow.validation?.state === 'blocking' ? 'Needs attention' : flow.status === 'testing' ? 'Testing' : flow.status[0]?.toUpperCase() + flow.status.slice(1);
+const time = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+export function FlowManager({ workspaceId }: {
+    workspaceId: string;
+}) {
+    const [items, setItems] = useState<Flow[]>([]), [overview, setOverview] = useState<Overview | null>(null), [query, setQuery] = useState(''), [tab, setTab] = useState('all'), [trigger, setTrigger] = useState('all'), [status, setStatus] = useState('all'), [health, setHealth] = useState('all'), [message, setMessage] = useState(''), [loading, setLoading] = useState(true), [createOpen, setCreateOpen] = useState(false), [templateOpen, setTemplateOpen] = useState(false), [name, setName] = useState(''), [recipeId, setRecipeId] = useState('blank'), [cursor, setCursor] = useState<string | undefined>(), [cursorHistory, setCursorHistory] = useState<string[]>([]), [nextCursor, setNextCursor] = useState<string | null>(null), [total, setTotal] = useState(0), [pageSize, setPageSize] = useState(15), [menu, setMenu] = useState<string | null>(null);
+    const recipe = recipes.find(item => item.id === recipeId) ?? recipes[0]!;
+    const activeStatus = tab === 'all' ? status : tab;
+    const count = (key: string) => overview?.statusCounts?.[key] ?? (key === 'active' ? overview?.activeFlows : key === 'draft' ? overview?.draftFlows : key === 'attention' ? overview?.needsAttention : 0) ?? 0;
+    async function load(next?: string, reset = false) { setLoading(true); try {
+        const p = new URLSearchParams({ limit: String(pageSize) });
+        const effective = reset ? undefined : next ?? cursor;
+        if (query.trim())
+            p.set('q', query.trim());
+        if (activeStatus !== 'all')
+            p.set('status', activeStatus);
+        if (trigger !== 'all')
+            p.set('trigger', trigger);
+        if (health !== 'all')
+            p.set('health', health);
+        if (effective)
+            p.set('cursor', effective);
+        const [flows, summary] = await Promise.all([phase3Api<ListResponse>(`/api/v1/workspaces/${workspaceId}/flows?${p}`), phase3Api<Overview>(`/api/v1/workspaces/${workspaceId}/flows/overview`)]);
+        setItems(flows.items);
+        setNextCursor(flows.nextCursor);
+        setTotal(flows.total);
+        setOverview({ ...summary, statusCounts: flows.statusCounts ?? summary.statusCounts });
+        setCursor(effective);
+        setMessage('');
+    }
+    catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to load flows.');
+    }
+    finally {
+        setLoading(false);
+    } }
+    useEffect(() => { setCursor(undefined); setCursorHistory([]); void load(undefined, true); }, [workspaceId, activeStatus, trigger, health, pageSize]);
+    const visibleStart = total ? cursorHistory.length * pageSize + 1 : 0, visibleEnd = Math.min(cursorHistory.length * pageSize + items.length, total), pages = Math.max(1, Math.ceil(total / pageSize));
+    async function create() { if (!name.trim())
+        return; try {
+        const flow = await phase3Api<Flow>(`/api/v1/workspaces/${workspaceId}/flows`, { method: 'POST', body: JSON.stringify({ name: name.trim(), graph: recipe.graph }) });
+        window.location.href = `/w/${workspaceId}/flows/${flow.id}/builder`;
+    }
+    catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to create flow.');
+    } }
+    async function duplicate(flow: Flow) { try {
+        const copy = await phase3Api<Flow>(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/duplicate`, { method: 'POST', body: JSON.stringify({ name: `${flow.name} copy` }) });
+        window.location.href = `/w/${workspaceId}/flows/${copy.id}/builder`;
+    }
+    catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to duplicate flow.');
+    } }
+    async function archive(flow: Flow) { if (!confirm(`Archive ${flow.name}? Existing run history will remain available.`))
+        return; try {
+        await phase3Api(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/archive`, { method: 'POST', body: '{}' });
+        await load(undefined, true);
+    }
+    catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to archive flow.');
+    } }
+    async function changeState(flow: Flow) { try {
+        if (flow.status === 'active')
+            await phase3Api(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/pause`, { method: 'POST', body: JSON.stringify({ mode: 'pause_future_actions' }) });
+        else if (flow.status === 'paused')
+            await phase3Api(`/api/v1/workspaces/${workspaceId}/flows/${flow.id}/resume`, { method: 'POST', body: JSON.stringify({ overduePolicy: 'immediate' }) });
+        else {
+            window.location.href = `/w/${workspaceId}/flows/${flow.id}/builder`;
+            return;
+        }
+        await load();
+    }
+    catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to update flow state.');
+    } }
+    const options = useMemo(() => recipes.filter(item => item.id !== 'blank'), []);
+    return <div className="flow-manager flow-list-modern">
+  <header className="flow-list-hero"><div><h1>Flows</h1><p>Build automated customer journeys that react to real customer behaviour.</p></div><button type="button" className="flow-dark-button" onClick={() => setCreateOpen(true)}>+ Create flow</button></header>
+  <section className="flow-overview-strip" aria-label="Flow overview"><article><span>Active flows</span><strong>{overview?.activeFlows ?? 0}</strong><small>accepting new contacts</small></article><article><span>Active journeys</span><strong>{overview?.activeRuns ?? 0}</strong><small>contacts in progress</small></article><article><span>Drafts</span><strong>{overview?.draftFlows ?? 0}</strong><small>not live yet</small></article><article data-alert={(overview?.needsAttention ?? 0)>0}><span>Needs attention</span><strong>{overview?.needsAttention ?? 0}</strong><small>blocking configuration</small></article></section>
+  <nav className="flow-tabs" aria-label="Flow status">{tabs.map(([key, label]) => <button type="button" key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{label} <span>{key === 'all' ? count('all') : count(key)}</span></button>)}</nav>
+  <section className="flow-filter-row" aria-label="Flow filters"><label className="flow-search"><span aria-hidden="true">⌕</span><input value={query} placeholder="Search flows" aria-label="Search flows" onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') {
+        setCursorHistory([]);
+        void load(undefined, true);
+    } }}/></label><select value={trigger} aria-label="Trigger" onChange={event => setTrigger(event.target.value)}><option value="all">Trigger</option><option value="list_joined">Contact added to list</option><option value="segment_entered">Contact enters a segment</option><option value="generic_event">Event / API event</option><option value="profile_date">Date property</option><option value="manual_test">Manual test</option></select><select value={status} aria-label="Status" onChange={event => { setTab('all'); setStatus(event.target.value); }}><option value="all">Status</option><option value="draft">Draft</option><option value="testing">Testing</option><option value="active">Active</option><option value="paused">Paused</option><option value="archived">Archived</option></select><select value={health} aria-label="Health" onChange={event => setHealth(event.target.value)}><option value="all">Health</option><option value="healthy">Healthy</option><option value="attention">Needs attention</option></select><button type="button" className="flow-filter-apply" onClick={() => { setCursorHistory([]); void load(undefined, true); }} disabled={loading}>Apply</button></section>
+  {message && <p className="flow-message" role="status">{message}</p>}
+  <section className="flow-list-results" aria-live="polite">{loading && !items.length ? <div className="flow-list-loading"><span /><span /><span /></div> : items.map(flow => <article key={flow.id} className="flow-list-card"><button type="button" className="flow-card-main" onClick={() => window.location.href = `/w/${workspaceId}/flows/${flow.id}/builder`} aria-label={`Open ${flow.name}`}><strong>{flow.name}</strong><small>#{flow.id.slice(0, 8)} · {flow.activeVersionId ? 'Published version' : 'Draft version'} · Last edited {time(flow.updatedAt)}</small><span className="flow-card-trigger">{flow.trigger.summary || 'Trigger not configured'}</span><span className={`flow-status-line ${statusDot(flow)}`}><i />{statusLabel(flow)}</span>{flow.validation?.state === 'blocking' && <em>{flow.validation.issues[0]?.message ?? 'Validation needs attention'}</em>}</button><dl className="flow-row-metrics"><div><dt>Active now</dt><dd>{flow.metrics.active ?? 0}</dd></div><div><dt>Entered</dt><dd>{flow.metrics.entered ?? 0}</dd></div><div><dt>Completed</dt><dd>{flow.metrics.completed ?? 0}</dd></div><div><dt>Delivered</dt><dd>{flow.metrics.delivered ?? 0}</dd></div><div><dt>Failed / suspended</dt><dd>{(flow.metrics.errors ?? 0) + (flow.metrics.held ?? 0)}</dd></div></dl><div className="flow-card-actions"><button type="button" className="flow-icon-action" title={flow.status === 'active' ? 'Pause flow' : flow.status === 'paused' ? 'Resume flow' : 'Open flow'} aria-label={flow.status === 'active' ? 'Pause flow' : flow.status === 'paused' ? 'Resume flow' : 'Open flow'} onClick={() => void changeState(flow)}>{flow.status === 'active' ? 'Ⅱ' : flow.status === 'paused' ? '▶' : '↗'}</button><button type="button" className="flow-icon-action" aria-label={`More actions for ${flow.name}`} aria-expanded={menu === flow.id} onClick={() => setMenu(menu === flow.id ? null : flow.id)}>•••</button>{menu === flow.id && <div className="flow-action-menu"><button type="button" onClick={() => window.location.href = `/w/${workspaceId}/flows/${flow.id}/builder`}>Edit</button><button type="button" onClick={() => void duplicate(flow)}>Duplicate</button><button type="button" onClick={() => void archive(flow)} disabled={flow.status === 'archived'}>Archive</button><span title="Flows with retained versions and run history are archived instead of permanently deleted.">Delete unavailable</span></div>}</div></article>)}{!loading && !items.length && <div className="flow-empty"><h2>{query || trigger !== 'all' || health !== 'all' || activeStatus !== 'all' ? 'No flows match these filters' : 'No flows yet'}</h2><p>{query || trigger !== 'all' || health !== 'all' || activeStatus !== 'all' ? 'Try changing a filter or search term.' : 'Create your first customer journey from scratch or start with a reusable template.'}</p><div><button type="button" className="flow-dark-button" onClick={() => { setRecipeId('blank'); setCreateOpen(true); }}>Create from scratch</button><button type="button" className="flow-quiet-button" onClick={() => setTemplateOpen(true)}>Start with a template</button></div></div>}</section>
+  <footer className="flow-pagination"><label>Rows per page <select value={pageSize} onChange={event => setPageSize(Number(event.target.value))}><option value="15">15</option><option value="30">30</option><option value="50">50</option></select></label><span>{visibleStart}-{visibleEnd} of {total} · Page {cursorHistory.length + 1} of {pages}</span><div><button type="button" aria-label="Previous page" disabled={!cursorHistory.length || loading} onClick={() => { const previous = cursorHistory.at(-1); setCursorHistory(old => old.slice(0, -1)); void load(previous || undefined); }}>‹</button><button type="button" aria-label="Next page" disabled={!nextCursor || loading} onClick={() => { if (nextCursor) {
+        setCursorHistory(old => [...old, cursor ?? '']);
+        void load(nextCursor);
+    } }}>›</button></div></footer>
+  {(createOpen || templateOpen) && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-flow-title"><section className="modal-card flow-create-modal"><div className="modal-head"><div><h2 id="create-flow-title">Create a flow</h2><p>Start clean or use a proven journey structure. Every step remains editable.</p></div><button type="button" aria-label="Close" onClick={() => { setCreateOpen(false); setTemplateOpen(false); }}>×</button></div>{!templateOpen ? <><div className="flow-create-choice"><button type="button" className={recipeId === 'blank' ? 'selected' : ''} onClick={() => setRecipeId('blank')}><strong>Start from scratch</strong><span>Trigger → End. Add actions and logic in the visual builder.</span></button><button type="button" className={recipeId === 'quick-test' ? 'selected' : ''} onClick={() => setRecipeId('quick-test')}><strong>Quick email test</strong><span>Manual test → Email → End. Select approved content in the builder.</span></button><button type="button" onClick={() => setTemplateOpen(true)}><strong>Use a recipe</strong><span>Welcome, win-back, post-purchase, and other editable journeys.</span></button></div><label>Flow name<input autoFocus value={name} placeholder="e.g. Welcome journey" onChange={event => setName(event.target.value)}/></label><footer><button type="button" className="flow-quiet-button" onClick={() => setTemplateOpen(true)}>Browse recipes</button><button type="button" className="flow-dark-button" disabled={!name.trim()} onClick={() => void create()}>Open builder</button></footer></> : <><div className="flow-template-grid">{options.map(item => <button type="button" className={item.id === recipeId ? 'selected' : ''} key={item.id} onClick={() => { setRecipeId(item.id); setTemplateOpen(false); setCreateOpen(true); }}><strong>{item.name}</strong><span>{item.description}</span></button>)}</div><footer><button type="button" className="flow-quiet-button" onClick={() => { setTemplateOpen(false); setCreateOpen(true); }}>Back</button></footer></>}</section></div>}
  </div>;
 }

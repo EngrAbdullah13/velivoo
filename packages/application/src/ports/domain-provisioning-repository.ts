@@ -21,6 +21,10 @@ export interface DomainProvisioningRepository {
   updateProvisioningDomain(input:{workspaceId:string;domainId:string;patch:Record<string,unknown>}):Promise<ProvisioningDomain>;
   upsertDnsEvidence(input:{workspaceId:string;senderDomainId:string;purpose:string;ownership:"customer"|"platform";record:ManagedDnsRecord;verificationStatus:string;customerActionRequired:boolean;observedValues?:string[];validationMethod?:string;lastCheckedAt?:Date}):Promise<void>;
   retireCustomerDnsEvidence(workspaceId:string,senderDomainId:string):Promise<void>;
+  retireDnsEvidenceExceptName?(workspaceId:string,senderDomainId:string,purpose:string,keepName:string):Promise<void>;
+  retireDnsEvidenceExceptExpected?(workspaceId:string,senderDomainId:string,purpose:string,keepName:string,keepExpectedValue:string):Promise<void>;
+  purgeDnsEvidenceExceptName?(workspaceId:string,senderDomainId:string,purpose:string,keepName:string):Promise<void>;
+  purgeDnsEvidenceDuplicatesForPurposes?(workspaceId:string,senderDomainId:string,purposes:string[]):Promise<void>;
   retireLegacyStaticDnsEvidence?(workspaceId:string,senderDomainId:string):Promise<void>;
   listDnsEvidence(workspaceId:string,senderDomainId:string,customerOnly?:boolean):Promise<Array<{purpose:string;ownership:string;recordType:string;name:string;expectedValue:string;observedValues?:unknown;verificationStatus:string;customerActionRequired:boolean;validationMethod?:string|null;lastCheckedAt?:Date|null}>>;
   upsertDeliveryRoute(input:{workspaceId:string;senderDomainId:string;provider:string;providerRegion:string;providerIdentityReference?:string;configurationSetName?:string;mailFromDomain?:string;trackingMode:string;trackingHostname?:string;status:string;holdReason?:string|null;rateLimitPerSecond?:number;warmingDailyLimit?:number}):Promise<{id:string;status:string}>;

@@ -38,6 +38,7 @@ const purposeTitles: Record<string, string> = {
   dkim_vm2: "DKIM vm2 (CNAME)",
   mail_from_mx: "Return path mail server (MX)",
   mail_from_spf: "Return path SPF (TXT)",
+  dmarc_advisory: "DMARC policy (TXT)",
 };
 
 export function presentCustomerDnsRecord(input: {
@@ -99,7 +100,12 @@ export function presentCustomerDnsRecord(input: {
   if (type === "TXT") {
     return {
       title,
-      instructions: purpose === "ownership" ? "Add one TXT record at your domain root (@)." : "Add one TXT record exactly as shown.",
+      instructions:
+        purpose === "ownership"
+          ? "Add one TXT record at your domain root (@)."
+          : purpose === "dmarc_advisory"
+            ? "Add one TXT record at _dmarc. Velivoo observes this record on recheck and never creates or overwrites an existing DMARC policy."
+            : "Add one TXT record exactly as shown.",
       host: { label: "Host / Name", ...host },
       fields: [{ key: "txt", label: "TXT value", value: input.value.replace(/^"|"$/g, "") }],
     };

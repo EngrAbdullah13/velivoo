@@ -1,6 +1,8 @@
 import { assessDeliverabilityHealth, buildDeliverabilityMetrics } from "../../../packages/domain/src/phase2/deliverability.js";
 import { customerDnsUsesProviderBranding, staticLifecycleState } from "../../../packages/domain/src/phase1/branded-domain.js";
 import { presentCustomerDnsRecord } from "../../../packages/domain/src/phase1/customer-dns-presentation.js";
+import { buildStaticProductionCustomerRecords } from "../../../packages/domain/src/phase1/static-production-customer-dns.js";
+import { staticProductionDnsRecordCount } from "../../../packages/domain/src/phase1/static-branded-dns.js";
 import { hasPermission, type Role } from "../../../packages/domain/src/phase1/permissions.js";
 
 type PrismaLike = any;
@@ -32,6 +34,7 @@ export async function deliverabilityDashboard(input: {
   supportedRegions?: string[];
   brandedDomainSetupAvailable?: boolean;
   staticBrandedSetupAvailable?: boolean;
+  dmarcRequired?: boolean;
 }) {
   const prisma = input.prisma;
   const days = boundedDays(input.days ?? 30);
@@ -149,12 +152,12 @@ export async function deliverabilityDashboard(input: {
     return decision?.reason === "WARMING_LIMIT";
   }).length;
   const feedbackLagSeconds = events.length ? Math.round(events.reduce((sum: number, event: any) => sum + Math.max(0, event.receivedAt.getTime() - event.occurredAt.getTime()), 0) / events.length / 1000) : null;
-  const brandedIds=domains.filter((domain:any)=>domain.provisioningMode==="branded_delegation"||domain.provisioningMode==="static_branded").map((domain:any)=>domain.id),[dnsEvidence,allDnsEvidence]=brandedIds.length?await Promise.all([prisma.senderDomainDnsEvidence.findMany({where:{workspaceId:input.workspaceId,senderDomainId:{in:brandedIds},customerActionRequired:true},orderBy:[{purpose:"asc"},{name:"asc"},{expectedValue:"asc"}]}),prisma.senderDomainDnsEvidence.findMany({where:{workspaceId:input.workspaceId,senderDomainId:{in:brandedIds}},select:{senderDomainId:true,purpose:true,verificationStatus:true}})]):[[],[]],evidenceByDomain=new Map<string,any[]>(),allEvidenceByDomain=new Map<string,any[]>(),routeByDomain=new Map<string,any>(deliveryRoutes.map((route:any)=>[route.senderDomainId,route])),identityCountByDomain=new Map<string,number>(),gatePassed=new Set(platformGates.filter((gate:any)=>gate.status==="passed").map((gate:any)=>gate.checkKey));
+  const brandedIds=domains.filter((domain:any)=>domain.provisioningMode==="branded_delegation"||domain.provisioningMode==="static_branded").map((domain:any)=>domain.id),[dnsEvidence,allDnsEvidence]=brandedIds.length?await Promise.all([prisma.senderDomainDnsEvidence.findMany({where:{workspaceId:input.workspaceId,senderDomainId:{in:brandedIds},customerActionRequired:true},orderBy:[{purpose:"asc"},{name:"asc"},{expectedValue:"asc"}]}),prisma.senderDomainDnsEvidence.findMany({where:{workspaceId:input.workspaceId,senderDomainId:{in:brandedIds}},orderBy:[{purpose:"asc"},{name:"asc"},{expectedValue:"asc"}]})]):[[],[]],evidenceByDomain=new Map<string,any[]>(),allEvidenceByDomain=new Map<string,any[]>(),routeByDomain=new Map<string,any>(deliveryRoutes.map((route:any)=>[route.senderDomainId,route])),identityCountByDomain=new Map<string,number>(),gatePassed=new Set(platformGates.filter((gate:any)=>gate.status==="passed").map((gate:any)=>gate.checkKey));
   for(const row of dnsEvidence)evidenceByDomain.set(row.senderDomainId,[...(evidenceByDomain.get(row.senderDomainId)??[]),row]);
   for(const row of allDnsEvidence)allEvidenceByDomain.set(row.senderDomainId,[...(allEvidenceByDomain.get(row.senderDomainId)??[]),row]);
   for(const identity of identities)identityCountByDomain.set(identity.domainId,(identityCountByDomain.get(identity.domainId)??0)+1);
   const allVerified=(domainId:string,purpose:string)=>{const rows=(allEvidenceByDomain.get(domainId)??[]).filter((row:any)=>row.purpose===purpose);return rows.length>0&&rows.every((row:any)=>row.verificationStatus==="verified")};
-  const customerVerified=(domainId:string,purpose:string)=>{const rows=(evidenceByDomain.get(domainId)??[]).filter((row:any)=>row.purpose===purpose);return rows.length>0&&rows.every((row:any)=>row.verificationStatus==="verified")};
+  const customerVerified=(domainId:string,purpose:string)=>{const rows=(allEvidenceByDomain.get(domainId)??[]).filter((row:any)=>row.purpose===purpose&&row.verificationStatus!=="archived");return rows.some((row:any)=>row.verificationStatus==="verified")};
   const staticDkimVerified=(domainId:string)=>customerVerified(domainId,"dkim_vm1")&&customerVerified(domainId,"dkim_vm2");
   const simpleState=(ok:boolean)=>ok?"ready":"pending";
   const customerDomains=domains.map((domain:any)=>{
@@ -170,12 +173,11 @@ export async function deliverabilityDashboard(input: {
     const mailFromVerified=isStatic?mailFromDnsVerified&&String(domain.mailFromStatus??"").toLowerCase()==="success":String(domain.mailFromStatus??"").toLowerCase()==="success"||allVerified(domain.id,"mail_from");
     const lifecycleState=isStatic?staticLifecycleState({
       ownershipVerified,
-      sendRoutingVerified,
       dkimDnsVerified,
       sesIdentitySuccess,
       dkimSuccess,
       mailFromVerified:dkimSuccess?mailFromVerified:undefined,
-      ready:domain.readinessStatus==="ready",
+      ready:domain.readinessStatus==="ready"||domain.authenticationStatus==="verified",
       failed:String(domain.lifecycleState??"").toUpperCase()==="FAILED",
     }):domain.lifecycleState;
     return {
@@ -191,6 +193,7 @@ export async function deliverabilityDashboard(input: {
       setupMode:domain.setupMode??null,
       routingId:domain.routingId??null,
       lifecycleState,
+      disconnectStatus:domain.disconnectStatus??null,
       authenticationStatus:domain.authenticationStatus,
       readinessStatus:domain.readinessStatus,
       readinessReasons:Array.isArray(domain.readinessReasons)?domain.readinessReasons:[],
@@ -199,7 +202,12 @@ export async function deliverabilityDashboard(input: {
       verificationStatus:domain.verificationStatus??null,
       dkimStatus:domain.dkimStatus??null,
       dnsStatus:domain.dnsStatus??null,
-      customerRecords:(evidenceByDomain.get(domain.id)??[]).filter(row=>!customerDnsUsesProviderBranding({name:row.name,value:row.expectedValue,purpose:row.purpose})).map(row=>{
+      productionDnsRecordCount:isStatic?staticProductionDnsRecordCount(Boolean(input.dmarcRequired)):undefined,
+      customerRecords:isStatic?buildStaticProductionCustomerRecords({
+        rootDomain:domain.rootDomain??domain.domain,
+        dmarcRequired:Boolean(input.dmarcRequired),
+        evidence:(allEvidenceByDomain.get(domain.id)??[]).filter((row:any)=>!customerDnsUsesProviderBranding({name:row.name,value:row.expectedValue,purpose:row.purpose})).map((row:any)=>({purpose:row.purpose,recordType:row.recordType,name:row.name,expectedValue:row.expectedValue,verificationStatus:row.verificationStatus,observedValues:row.observedValues,lastCheckedAt:row.lastCheckedAt})),
+      }):(evidenceByDomain.get(domain.id)??[]).filter(row=>row.verificationStatus!=="archived"&&!customerDnsUsesProviderBranding({name:row.name,value:row.expectedValue,purpose:row.purpose})).map(row=>{
         const root=domain.rootDomain??domain.domain;
         return {
           type:row.recordType,
@@ -215,11 +223,11 @@ export async function deliverabilityDashboard(input: {
       readinessChecks:[
         ...(isStatic?[]:[{key:"nameservers",label:"Nameservers",status:simpleState(domain.delegationStatus==="verified"||allVerified(domain.id,"delegation"))},{key:"soa",label:"Authoritative SOA",status:simpleState(domain.soaStatus==="verified")}]),
         {key:"ownership",label:"Ownership verification",status:simpleState(isStatic?customerVerified(domain.id,"ownership"):allVerified(domain.id,"ownership"))},
-        ...(isStatic?[{key:"send_routing",label:"Send routing",status:simpleState(customerVerified(domain.id,"send_routing"))}]:[]),
+        ...(isStatic?[{key:"send_routing",label:"Branded link tracking (optional)",status:customerVerified(domain.id,"send_routing")?"ready":"warning"}]:[]),
         {key:"identity",label:"Email identity",status:simpleState(String(domain.verificationStatus??"").toLowerCase()==="success")},
         {key:"dkim",label:isStatic?"DKIM (Velivoo branded)":isV3?"DKIM (platform managed)":"DKIM",status:isStatic?simpleState(String(domain.dkimStatus??"").toLowerCase()==="success"&&staticDkimVerified(domain.id)):(isV3?(String(domain.dkimStatus??"").toLowerCase()==="success"?"managed":"pending"):simpleState(String(domain.dkimStatus??"").toLowerCase()==="success"&&allVerified(domain.id,"dkim")))},
         ...(isStatic?[{key:"mail_from",label:"Branded return-path",status:simpleState(mailFromVerified)}]:[{key:"mail_from",label:"Branded return-path",status:isV3?(String(domain.mailFromStatus??"").toLowerCase()==="success"?"managed":"pending"):simpleState(String(domain.mailFromStatus??"").toLowerCase()==="success"||allVerified(domain.id,"mail_from"))}]),
-        {key:"dmarc",label:"Root DMARC observation",status:domain.dmarcStatus==="warning"?"warning":"ready"},
+        {key:"dmarc",label:input.dmarcRequired?"DMARC (TXT)":"Root DMARC observation",status:domain.dmarcStatus==="verified"?"ready":domain.dmarcStatus==="pending"?"pending":"warning"},
         ...(isStatic?[]:[{key:"tracking",label:"Tracking HTTPS",status:domain.trackingProvider==="platform"||!domain.trackingProvider?"managed":simpleState(String(domain.trackingHttpsStatus??"").toLowerCase()==="verified"&&allVerified(domain.id,"tracking"))}]),
         {key:"sender",label:"Sender",status:simpleState((identityCountByDomain.get(domain.id)??0)>0&&routeByDomain.get(domain.id)?.status==="active")},
         {key:"feedback",label:"Feedback",status:simpleState(gatePassed.has("real.sns.signature")&&gatePassed.has("real.sns.subscription")&&gatePassed.has("real.feedback.endpoint"))},
@@ -230,7 +238,7 @@ export async function deliverabilityDashboard(input: {
   return {
     period: { days, from, to, freshness: to },
     filters: { domainId: selectedDomain?.id ?? null, domain: selectedDomain ? {id:selectedDomain.id,domain:selectedDomain.rootDomain??selectedDomain.domain} : null, flowId: selectedFlow?.id ?? null, flows },
-    capabilities: { canManageDomains: hasPermission(role, "domains.manage"), brandedDomainSetupAvailable: Boolean(input.brandedDomainSetupAvailable), staticBrandedSetupAvailable: Boolean(input.staticBrandedSetupAvailable), canManageSuppressions: hasPermission(role, "suppressions.manage"), canManageOperations: hasPermission(role, "operations.pause") },
+    capabilities: { canManageDomains: hasPermission(role, "domains.manage"), brandedDomainSetupAvailable: Boolean(input.brandedDomainSetupAvailable), staticBrandedSetupAvailable: Boolean(input.staticBrandedSetupAvailable), dmarcRequired: Boolean(input.dmarcRequired), canManageSuppressions: hasPermission(role, "suppressions.manage"), canManageOperations: hasPermission(role, "operations.pause") },
     health,
     metrics,
     volume: { submitted, delivered, trend: [...trend.values()] },

@@ -335,6 +335,14 @@ model EmailTemplate {
   preheaderTemplate String   @default("") @map("preheader_template")
   plainText         String   @default("") @map("plain_text")
   settingsJson      Json?    @map("settings_json") @db.JsonB
+  // The legacy document/source columns remain authoritative until the new
+  // renderer and editor are ready. Null means this row has not been migrated.
+  editorType        String?  @map("editor_type")
+  sourceType        String?  @map("source_type")
+  draftSchemaVersion Int?    @map("draft_schema_version")
+  draftDesignJson   Json?    @map("draft_design_json") @db.JsonB
+  draftRevision     BigInt?  @map("draft_revision")
+  updatedBy         String?  @map("updated_by") @db.Uuid
   templateType      String   @default("native") @map("template_type")
   importMethod      String?  @map("import_method")
   originalFilename  String?  @map("original_filename")
@@ -433,6 +441,12 @@ model EmailTemplateVersion {
   preheaderTemplate String @map("preheader_template")
   plainText String @map("plain_text")
   settingsJson Json? @map("settings_json") @db.JsonB
+  // Nullable for already-approved immutable v1 snapshots.
+  editorType String? @map("editor_type")
+  designSchemaVersion Int? @map("design_schema_version")
+  designJson Json? @map("design_json") @db.JsonB
+  sourceHtml String? @map("source_html") @db.Text
+  renderedHtml String? @map("rendered_html") @db.Text
   contentHash String @map("content_hash")
   approvedAt DateTime @default(now()) @map("approved_at") @db.Timestamptz(6)
   approvedBy String @map("approved_by") @db.Uuid

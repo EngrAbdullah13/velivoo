@@ -29,7 +29,7 @@ export class Phase3RuntimeService{
     for(const rule of entryFilters){const evaluation=await this.rules.evaluate({workspaceId:input.workspaceId,profileId:input.profileId,rule,at:now});if(!evaluation.result)return {entered:false,reason:'ENTRY_FILTER',evaluation};}
     let dedupe='';
     if(graph.entryPolicy.mode==='once')dedupe=stable(input.flowId,input.profileId,'once');
-    else if(graph.entryPolicy.mode==='once_per_event')dedupe=stable(input.flowId,input.profileId,input.triggerEventId??input.triggerKey);
+    else if(graph.entryPolicy.mode==='once_per_event')dedupe=stable(input.flowId,input.profileId,input.triggerEventId??input.triggerKey,now.toISOString());
     else{
       const latest=await this.repo.latestRunForProfile(input.workspaceId,input.flowId,input.profileId),cooldown=(graph.entryPolicy.cooldownSeconds??0)*1000;
       if(latest&&now.getTime()-latest.enteredAt.getTime()<cooldown)return {entered:false,reason:'COOLDOWN',run:latest};

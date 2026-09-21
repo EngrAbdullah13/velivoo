@@ -17,6 +17,38 @@ export type DkimRotationState = typeof DKIM_ROTATION_STATES[number];
 
 export const DKIM_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Registrar DNS records required for safe production SMTP sending (excludes optional link-tracking CNAME). */
+export const STATIC_PRODUCTION_SENDING_DNS_PURPOSES = [
+  "ownership",
+  "dkim_vm1",
+  "dkim_vm2",
+  "mail_from_mx",
+  "mail_from_spf",
+] as const;
+
+export const STATIC_PRODUCTION_DNS_PURPOSE_ORDER = [
+  ...STATIC_PRODUCTION_SENDING_DNS_PURPOSES,
+  "dmarc_advisory",
+] as const;
+
+export function staticProductionDnsPurposes(dmarcRequired: boolean) {
+  return dmarcRequired
+    ? [...STATIC_PRODUCTION_SENDING_DNS_PURPOSES, "dmarc_advisory" as const]
+    : [...STATIC_PRODUCTION_SENDING_DNS_PURPOSES];
+}
+
+export function staticProductionDnsRecordCount(dmarcRequired: boolean) {
+  return staticProductionDnsPurposes(dmarcRequired).length;
+}
+
+export function isStaticProductionSendingDnsPurpose(purpose: string | null | undefined) {
+  return (STATIC_PRODUCTION_SENDING_DNS_PURPOSES as readonly string[]).includes(String(purpose ?? ""));
+}
+
+export function isStaticProductionDnsPurpose(purpose: string | null | undefined, dmarcRequired: boolean) {
+  return (staticProductionDnsPurposes(dmarcRequired) as readonly string[]).includes(String(purpose ?? ""));
+}
+
 export function staticBrandedZoneApex(configuredDomain: string, zonePrefix: "dkim." | "send." = "dkim.") {
   const canonical = canonicalDnsName(configuredDomain);
   if (!canonical) throw new Error("STATIC_DNS_DOMAIN_INVALID");
@@ -31,9 +63,21 @@ export function staticBrandedSendRoutingHost(routingId: string, staticSendDomain
   return `${routingId}.send.${staticBrandedZoneApex(staticSendDomain, "send.")}`;
 }
 
-/** Customer CNAME: send.<root> → <routingId>.send.<apex> */
-export function staticSendCustomerHost(rootDomain: string) {
-  return infraDomain(rootDomain);
+/** When the workspace root is the platform apex, send.<root> collides with the shared send zone — use links.<root> instead. */
+export const STATIC_SEND_CUSTOMER_FALLBACK_LABEL = "links";
+
+/** Customer CNAME: send.<root> → <routingId>.send.<apex> (or links.<root> on platform apex). */
+export function staticSendCustomerHost(rootDomain: string, staticSendDomain?: string) {
+  const root = canonicalDnsName(rootDomain);
+  const sendHost = infraDomain(root);
+  if (staticSendDomain && canonicalDnsName(sendHost) === canonicalDnsName(staticSendDomain)) {
+    return `${STATIC_SEND_CUSTOMER_FALLBACK_LABEL}.${root}`;
+  }
+  return sendHost;
+}
+
+export function staticSendRoutingUsesAlternateHost(rootDomain: string, staticSendDomain?: string) {
+  return staticSendCustomerHost(rootDomain, staticSendDomain) !== infraDomain(rootDomain);
 }
 
 /** Customer CNAME: vm1._domainkey.<root> → vm1.<routingId>.dkim.<apex> */

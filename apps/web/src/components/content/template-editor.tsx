@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ContentBlock, PreflightIssue, StructuredEmailDocument } from "../../../../../packages/domain/src/phase2/content";
 import { DocumentBuilder, type MessageSettings, type PreviewMode, type TemplateDesignSettings } from "./document-builder";
+import { PlainTextEditorPanel } from "./inbox-metadata-bar";
 import { phase1Api } from "../../lib/phase1-api";
 import { buildImportedHtmlDocument } from "../../lib/template-document-utils";
 
@@ -15,6 +16,7 @@ interface Template {
   preheader: string;
   plainText: string;
   settings: Record<string, unknown> | null;
+  editorType?: "visual" | "html" | "text";
   templateType?: string;
   importMethod?: string | null;
   originalFilename?: string | null;
@@ -57,6 +59,7 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
   const [versions, setVersions] = useState<TemplateVersion[]>([]);
   const [usage, setUsage] = useState<Usage[]>([]);
   const [issues, setIssues] = useState<PreflightIssue[]>([]);
+  const [focusMessageTabKey, setFocusMessageTabKey] = useState(0);
   const [importHtmlOpen, setImportHtmlOpen] = useState(false);
   const [importHtmlValue, setImportHtmlValue] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,6 +78,7 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
         phase1Api<BrandKit | null>(`/api/v1/workspaces/${workspaceId}/content/brand-kit`),
       ]);
       setTemplate(templateResponse);
+      setPreviewMode(templateResponse.editorType === "text" ? "plain" : "desktop");
       setVariables(variableResponse.items);
       setUniversalBlocks(blockResponse.items);
       setMediaAssets(mediaResponse.items);
@@ -310,9 +314,9 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
     <header className="template-topbar">
       <div className="template-heading">
         <nav className="template-breadcrumb" aria-label="Breadcrumb">
-          <a href={`/w/${workspaceId}/content`}>Content</a><span>/</span>
-          <a href={`/w/${workspaceId}/content/templates`}>Templates</a><span>/</span>
-          <strong>{template.name || "Untitled template"}</strong>
+          <a className="editor-back-link" href={`/w/${workspaceId}/content/templates`} aria-label="Back to templates">←</a>
+          <a href={`/w/${workspaceId}/content/templates`}>Email templates</a><span>/</span>
+          <strong>Design</strong>
         </nav>
         <div className="template-title-row">
           <input className="template-name-input" aria-label="Template name" value={template.name} maxLength={160}
@@ -323,20 +327,35 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
         </div>
       </div>
       <div className="editor-mode-tabs" aria-label="Editor mode">
-        <button type="button" className="premium-button premium-button-secondary" title="Add an email element" onClick={() => document.getElementById("content-block-library")?.scrollIntoView({ behavior: "smooth", block: "start" })}>+ Add</button>
         <div className="preview-segmented editor-view-switcher" aria-label="Email preview mode">
-          {(["desktop", "mobile", "plain"] as PreviewMode[]).map(mode => <button key={mode} type="button" className={previewMode === mode ? "active" : ""} onClick={() => setPreviewMode(mode)}>{mode === "desktop" ? "Design" : mode === "plain" ? "Plain text" : "Mobile"}</button>)}
+          {(["desktop", "mobile", "plain"] as PreviewMode[]).map(mode => <button key={mode} type="button" className={previewMode === mode ? "active" : ""} onClick={() => setPreviewMode(mode)}>{mode === "desktop" ? "Desktop" : mode === "plain" ? "Plain text" : "Mobile"}</button>)}
         </div>
       </div>
       <div className="template-top-actions">
         <button type="button" className="premium-button premium-button-icon" disabled={!history.past.length || saving} title={history.past.length ? "Undo last editor change" : "Nothing to undo"} aria-label="Undo" onClick={undo}>↶</button>
         <button type="button" className="premium-button premium-button-icon" disabled={!history.future.length || saving} title={history.future.length ? "Redo last editor change" : "Nothing to redo"} aria-label="Redo" onClick={redo}>↷</button>
+        <button
+          type="button"
+          className={`premium-button premium-button-secondary message-settings-action${!template.subject.trim() || !template.plainText.trim() ? " needs-attention" : ""}`}
+          title="Edit subject, preview text, and plain-text body"
+          onClick={() => {
+            if (previewMode === "plain" || hasImportedSource || template.editorType === "text") setPreviewMode("plain");
+            else setFocusMessageTabKey(key => key + 1);
+          }}
+        >
+          <span aria-hidden="true">✉</span> Subject &amp; message
+        </button>
         <button type="button" className="premium-button premium-button-secondary" onClick={() => setPreviewMode("desktop")}>Preview</button>
-        <button type="button" className="premium-button premium-button-secondary" onClick={hasImportedSource ? () => openHtmlEditor() : () => setImportHtmlOpen(true)}>{hasImportedSource ? "Edit HTML" : "Import HTML"}</button>
-        <button type="button" className="premium-button premium-button-secondary" onClick={() => void exportHtml()}>Export HTML</button>
         <button type="button" className="premium-button premium-button-secondary" disabled={saving} onClick={() => void preflight()}>Preflight</button>
-        <button type="button" className="premium-button premium-button-primary" disabled={saving} onClick={() => void approve()}>{hasApprovedVersion ? "Approve new version" : "Approve version"}</button>
-        <button type="button" className="premium-button premium-button-primary" disabled={saving || !hasApprovedVersion} title={hasApprovedVersion ? "Create an email draft from the latest immutable approved version." : "Approve a version before using this template in a campaign."} onClick={() => void createCampaign()}>Use in campaign</button>
+        <details className="editor-more-menu">
+          <summary className="premium-button premium-button-icon" aria-label="More template actions" title="More template actions">•••</summary>
+          <div className="editor-more-popover">
+            <button type="button" onClick={hasImportedSource ? () => openHtmlEditor() : () => setImportHtmlOpen(true)}>{hasImportedSource ? "Edit source HTML" : "Import HTML"}</button>
+            <button type="button" onClick={() => void exportHtml()}>Export HTML</button>
+          </div>
+        </details>
+        {hasApprovedVersion && <button type="button" className="premium-button premium-button-secondary" disabled={saving} title="Create an email draft from the latest immutable approved version." onClick={() => void createCampaign()}>Use in campaign</button>}
+        <button type="button" className="premium-button premium-button-primary" disabled={saving} onClick={() => void approve()}>{hasApprovedVersion ? "Publish changes" : "Publish"}</button>
       </div>
     </header>
 
@@ -344,15 +363,50 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
 
     <div className="template-editor-workspace">
       {previewMode === "plain"
-        ? <section className="plain-text-stage"><pre className="email-plain-preview">{template.plainText || "The template plain-text alternative will appear here."}</pre></section>
+        ? <PlainTextEditorPanel subject={template.subject} preheader={template.preheader} plainText={template.plainText} onMetadataChange={updateMessageSettings} onChange={plainText => updateMessageSettings({ plainText })} />
+        : template.editorType === "text"
+          ? <SimpleTextEmailPreview templateName={template.name} subject={template.subject} preheader={template.preheader} plainText={template.plainText} previewMode={previewMode} />
         : hasImportedSource && sourceHtml
           ? <ImportedHtmlCanvas html={sourceHtml} previewMode={previewMode} onChange={changeImportedSource} onOpenHtmlEditor={openHtmlEditor} />
-          : <DocumentBuilder document={template.document} variables={variables} universalBlocks={universalBlocks} mediaAssets={mediaAssets} previewMode={previewMode} templateSettings={templateDesignSettings(template.settings)} brandColors={[brandKit?.primaryColor, brandKit?.secondaryColor].filter((color): color is string => typeof color === "string")} messageSettings={{ subject: template.subject, preheader: template.preheader, plainText: template.plainText, category: template.category, notes: getTemplateNotes(template.settings), templateType: templateSettingString(template.settings, "templateType"), useCase: templateSettingString(template.settings, "useCase"), tags: templateTags(template.settings) }} onMessageSettingsChange={updateMessageSettings} onTemplateSettingsChange={settings => change({ ...template, settings: { ...(template.settings ?? {}), ...settings } })} onChange={document => change({ ...template, document })} />}
+          : <DocumentBuilder document={template.document} variables={variables} universalBlocks={universalBlocks} mediaAssets={mediaAssets} previewMode={previewMode} templateSettings={templateDesignSettings(template.settings)} brandColors={[brandKit?.primaryColor, brandKit?.secondaryColor].filter((color): color is string => typeof color === "string")} messageSettings={{ subject: template.subject, preheader: template.preheader, plainText: template.plainText, category: template.category, notes: getTemplateNotes(template.settings), templateType: templateSettingString(template.settings, "templateType"), useCase: templateSettingString(template.settings, "useCase"), tags: templateTags(template.settings) }} onMessageSettingsChange={updateMessageSettings} onTemplateSettingsChange={settings => change({ ...template, settings: { ...(template.settings ?? {}), ...settings } })} onChange={document => change({ ...template, document })} focusMessageTabKey={focusMessageTabKey} />}
     </div>
 
-    {issues.length > 0 && <section className="preflight-notice" aria-live="polite"><strong>Preflight results</strong>{issues.map(issue => <p key={`${issue.code}:${issue.path}`}><span className={issue.severity}>{issue.severity}</span>{issue.message}</p>)}</section>}
+    {issues.length > 0 && <section className="preflight-notice" aria-live="polite"><strong>Preflight results</strong>{issues.some(issue => /subject|preview|plain.?text/i.test(issue.message)) && <p className="preflight-hint">Add the <strong>subject line</strong> and <strong>preview text</strong> above the canvas. Add <strong>plain text</strong> in the Plain text tab.</p>}{issues.map(issue => <p key={`${issue.code}:${issue.path}`}><span className={issue.severity}>{issue.severity}</span>{issue.message}</p>)}<button type="button" className="button-secondary" onClick={() => { if (issues.some(issue => /plain.?text/i.test(issue.message))) setPreviewMode("plain"); else setFocusMessageTabKey(key => key + 1); }}>Fix inbox settings</button></section>}
     {importHtmlOpen && <div className="modal-backdrop" role="presentation"><section className="modal template-form-modal" role="dialog" aria-modal="true" aria-labelledby="editor-import-html-title"><header><div><h2 id="editor-import-html-title">{hasImportedSource ? "Edit template HTML" : "Import HTML"}</h2><p>{hasImportedSource ? "Edit the source while retaining the template’s original layout, styling, and responsive rules." : "Paste exported HTML to replace the current template draft."}</p></div><button type="button" className="modal-close" onClick={() => setImportHtmlOpen(false)}>×</button></header><label>{hasImportedSource ? "Template HTML" : "Paste email HTML"}<textarea rows={12} value={importHtmlValue} onChange={event => setImportHtmlValue(event.target.value)} /></label><footer><button type="button" className="button-secondary" onClick={() => setImportHtmlOpen(false)}>Cancel</button><button type="button" className="button-primary" disabled={!importHtmlValue.trim() || saving} onClick={() => { if (window.confirm(hasImportedSource ? "Save these changes to the template HTML?" : "Replace the current canvas with this imported HTML?")) void applyImportedHtml(); }}>{hasImportedSource ? "Save HTML" : "Import HTML"}</button></footer></section></div>}
   </section>;
+}
+
+function SimpleTextEmailPreview({ templateName, subject, preheader, plainText, previewMode }: { templateName: string; subject: string; preheader: string; plainText: string; previewMode: Exclude<PreviewMode, "plain"> }) {
+  const mobile = previewMode === "mobile";
+  const paragraphs = plainText.trim() ? plainText.trim().split(/\n{2,}/) : [];
+  return <main className="simple-text-preview-stage" aria-label={`${mobile ? "Mobile" : "Desktop"} email preview`}>
+    <div className={`simple-text-preview-frame${mobile ? " is-mobile" : ""}`}>
+      <section className="simple-text-inbox-summary" aria-label="Inbox preview">
+        <span className="simple-text-inbox-icon" aria-hidden="true">✉</span>
+        <div className="simple-text-inbox-copy">
+          <span>Inbox preview</span>
+          <strong>{subject.trim() || "Your subject line"}</strong>
+          <p>{preheader.trim() || "Add preview text to support your subject."}</p>
+        </div>
+        <span className="simple-text-device-badge"><i aria-hidden="true">{mobile ? "▯" : "▭"}</i>{mobile ? "Mobile" : "Desktop"} · {mobile ? "390" : "640"}px</span>
+      </section>
+      <div className="simple-text-preview-label">
+        <span>Email preview</span>
+        <span>{templateName}</span>
+      </div>
+      <article className={`simple-text-email-preview${mobile ? " is-mobile" : ""}`}>
+        {paragraphs.length
+          ? <div className="simple-text-preview-body">{paragraphs.map((paragraph, index) => <p key={`${index}:${paragraph.slice(0, 16)}`}>{paragraph}</p>)}</div>
+          : <div className="simple-text-preview-empty"><span aria-hidden="true">✉</span><strong>Your email body is empty</strong><p>Open Plain text to write the message recipients will read.</p></div>}
+        <div className="simple-text-preview-footer">
+          <span className="simple-text-footer-mark" aria-hidden="true">V</span>
+          <strong>Your business name</strong>
+          <span>Your business address</span>
+          <span className="simple-text-footer-links"><u>Unsubscribe</u><b aria-hidden="true">·</b><u>Manage preferences</u></span>
+        </div>
+      </article>
+    </div>
+  </main>;
 }
 
 type SourceElementType = "heading" | "text" | "divider" | "spacer" | "columns" | "list" | "header" | "footer" | "image_text";

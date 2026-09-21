@@ -1,2 +1,2 @@
-import {RunInspector} from '../../../../../../components/automation/run-inspector';
-export default async function Page({params}:{params:Promise<{workspaceId:string;flowId:string}>}){const {workspaceId,flowId}=await params;return <section><h1>Flow runs</h1><RunInspector workspaceId={workspaceId} flowId={flowId}/></section>}
+import { FlowActivityV2 } from '../../../../../../components/automation/flow-activity-v2';
+export default async function Page({params}:{params:Promise<{workspaceId:string;flowId:string}>}){const {workspaceId,flowId}=await params;return <FlowActivityV2 workspaceId={workspaceId} flowId={flowId}/>}

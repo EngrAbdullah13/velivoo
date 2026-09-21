@@ -12,7 +12,7 @@ import { DisabledEmailProvider } from "../../../packages/provider-email/src/disa
 import { SesEmailProvider } from "../../../packages/provider-email/src/ses/ses-provider.js";
 import type { EmailDeliveryProvider } from "../../../packages/application/src/ports/email-delivery-provider.js";
 import { Phase2JobQueue } from "../../../packages/queue/src/bullmq/phase2-job-queue.js";
-import { loadEmailPlatformConfig } from "../../../packages/config/src/env.js";
+import { confirmDeliveryWithoutFeedback, loadEmailPlatformConfig } from "../../../packages/config/src/env.js";
 import { hasPermission, type Permission, type Role } from "../../../packages/domain/src/phase1/permissions.js";
 import { localSessionActor } from "./local-session-auth.js";
 import type { StructuredEmailDocument } from "../../../packages/domain/src/phase2/content.js";
@@ -21,7 +21,7 @@ import { MarketingBroadcastService, newCampaignId } from "../../../packages/appl
 const emailConfig=loadEmailPlatformConfig();
 const prisma=new PrismaClient(),p1=new PrismaPhase1Repository(prisma),p2=new PrismaPhase2Repository(prisma),objects=new LocalObjectStore(process.env.EMAIL_PLATFORM_OBJECT_ROOT??".local/objects");
 const mail:EmailDeliveryProvider=emailConfig.emailProvider==="ses"&&emailConfig.emailSendEnabled?new SesEmailProvider(emailConfig.awsSesRegion??"",emailConfig.runtimeMode==="production"?undefined:emailConfig.sesConfigurationSet,emailConfig.sesSupportedRegions):new DisabledEmailProvider();
-const service=new Phase2Service(p2,objects,mail,{publicBaseUrl:process.env.EMAIL_PLATFORM_PUBLIC_BASE_URL??"http://localhost:4001",unsubscribeSecret:process.env.EMAIL_PLATFORM_UNSUBSCRIBE_SIGNING_SECRET??"change-this-development-unsubscribe-secret-123456",trackingSecret:process.env.EMAIL_PLATFORM_TRACKING_SIGNING_SECRET??"change-this-development-tracking-secret-123456789",maxMessageBytes:Number(process.env.EMAIL_PLATFORM_MAX_MESSAGE_BYTES??500000),providerReady:mail.name!=="disabled",requireWorkspaceConfigurationSet:emailConfig.runtimeMode==="production",unsubscribePublicBaseOnly:emailConfig.runtimeMode!=="production"});
+const service=new Phase2Service(p2,objects,mail,{publicBaseUrl:process.env.EMAIL_PLATFORM_PUBLIC_BASE_URL??"http://localhost:4001",unsubscribeSecret:process.env.EMAIL_PLATFORM_UNSUBSCRIBE_SIGNING_SECRET??"change-this-development-unsubscribe-secret-123456",trackingSecret:process.env.EMAIL_PLATFORM_TRACKING_SIGNING_SECRET??"change-this-development-tracking-secret-123456789",maxMessageBytes:Number(process.env.EMAIL_PLATFORM_MAX_MESSAGE_BYTES??500000),providerReady:mail.name!=="disabled",requireWorkspaceConfigurationSet:emailConfig.runtimeMode==="production",unsubscribePublicBaseOnly:emailConfig.runtimeMode!=="production",confirmDeliveryWithoutFeedback:confirmDeliveryWithoutFeedback(emailConfig)});
 // Local web/API development must remain usable without Redis. Workers and
 // queue-backed delivery are explicitly enabled only when the matching flag is set.
 const jobs=emailConfig.deliveryQueueEnabled&&process.env.REDIS_URL?new Phase2JobQueue(process.env.REDIS_URL):null;
@@ -90,7 +90,13 @@ const server=createServer(async(req,res)=>{try{if(req.method==="OPTIONS"){res.wr
   const convertBlocks=suffix.match(/^\/content\/templates\/([^/]+)\/convert-to-blocks$/);if(convertBlocks&&req.method==="POST")return send(res,200,await service.convertTemplateToBlocks(a,convertBlocks[1]!));
   const exportHtml=suffix.match(/^\/content\/templates\/([^/]+)\/export-html$/);if(exportHtml&&req.method==="POST"){const exported=await service.exportTemplateHtml(a,exportHtml[1]!);return send(res,200,exported)}
   if(suffix==="/content/templates"&&req.method==="GET")return send(res,200,await service.templates(a,{cursor:url.searchParams.get("cursor")??undefined,limit:Number(url.searchParams.get("limit")??25),query:url.searchParams.get("q")??undefined,archived:url.searchParams.get("archived")==="true"}));
-  if(suffix==="/content/templates"&&req.method==="POST"){const body=await json(req);if(!isRecord(body))throw new Error("REQUEST_INVALID");const category=categoryValue(body);if(category===null)throw new Error("TEMPLATE_CATEGORY_INVALID");return send(res,201,await service.createTemplate(a,{name:stringValue(body.name),category}))}
+  if(suffix==="/content/templates"&&req.method==="POST"){
+    const body=await json(req);if(!isRecord(body))throw new Error("REQUEST_INVALID");
+    const category=categoryValue(body);if(category===null)throw new Error("TEMPLATE_CATEGORY_INVALID");
+    const editorType=body.editorType===undefined?undefined:body.editorType==="visual"||body.editorType==="text"?body.editorType:null;
+    if(editorType===null)throw new Error("TEMPLATE_EDITOR_TYPE_INVALID");
+    return send(res,201,await service.createTemplate(a,{name:stringValue(body.name),category,editorType}));
+  }
   const useSystemTemplate=suffix.match(/^\/content\/system-templates\/([^/]+)\/use$/);if(useSystemTemplate&&req.method==="POST"){const body=await json(req);return send(res,201,await service.useSystemTemplate(a,useSystemTemplate[1]!,isRecord(body)&&typeof body.name==="string"?{name:body.name}:{}))}
   const email=suffix.match(/^\/emails\/([^/]+)$/);if(email&&req.method==="GET")return send(res,200,await service.getEmail(a,email[1]!));if(email&&req.method==="PATCH"){const b=await json(req);return send(res,200,await service.updateEmail(a,email[1]!,b))}
   const pf=suffix.match(/^\/emails\/([^/]+)\/preflight$/);if(pf&&req.method==="POST")return send(res,200,await service.preflight(a,pf[1]!));

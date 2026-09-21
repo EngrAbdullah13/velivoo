@@ -12,6 +12,14 @@ function publicHttps(url:string|undefined){
 function code(error:unknown,fallback:string){return error instanceof Error?error.message.split(":")[0]||fallback:fallback}
 function check(key:string,label:string,ready:boolean,detail:string,diagnostic?:string|null):InfrastructureCheck{return {key,label,state:ready?"ready":"attention",detail,diagnostic:diagnostic??null,checkedAt:new Date().toISOString()}}
 
+function fetchDiagnostic(error:unknown,fallback:string){
+  if(!(error instanceof Error))return fallback;
+  const cause=(error as Error&{cause?:{code?:unknown;message?:unknown}}).cause;
+  const causeCode=typeof cause?.code==="string"?cause.code:null;
+  const causeMessage=typeof cause?.message==="string"?cause.message:null;
+  return causeCode??causeMessage??error.message??fallback;
+}
+
 /**
  * Records only an availability result and a non-sensitive diagnostic. The
  * configured public URL is probed from the server; browser state is never used
@@ -22,9 +30,20 @@ export async function refreshPublicEndpointEvidence(prisma:PrismaLike,key:"real.
   let passed=false,diagnostic="PUBLIC_HTTPS_URL_REQUIRED";
   if(endpoint){
     const target=new URL(path,endpoint);
-    try{const response=await fetch(target,{signal:AbortSignal.timeout(5000),headers:{accept:"text/plain"}});passed=response.ok;diagnostic=passed?"PUBLIC_ENDPOINT_REACHABLE":`PUBLIC_ENDPOINT_HTTP_${response.status}`}catch(error){diagnostic=code(error,"PUBLIC_ENDPOINT_PROBE_FAILED")}
+    try{const response=await fetch(target,{signal:AbortSignal.timeout(5000),headers:{accept:"text/plain"}});passed=response.ok;diagnostic=passed?"PUBLIC_ENDPOINT_REACHABLE":`PUBLIC_ENDPOINT_HTTP_${response.status}`}catch(error){diagnostic=fetchDiagnostic(error,"PUBLIC_ENDPOINT_PROBE_FAILED")}
   }
   await prisma.phase0GateEvidence.upsert({where:{checkKey:key},create:{checkKey:key,status:passed?"passed":"blocked",evidenceJson:{hostname:endpoint?.hostname??null,protocol:endpoint?.protocol??null,diagnostic}},update:{status:passed?"passed":"blocked",evidenceJson:{hostname:endpoint?.hostname??null,protocol:endpoint?.protocol??null,diagnostic},checkedAt:new Date()}});
+  return {passed,diagnostic};
+}
+
+export async function refreshPublicUnsubscribeEvidence(prisma:PrismaLike,baseUrl:string|undefined){
+  const endpoint=publicHttps(baseUrl);
+  let passed=false,diagnostic="PUBLIC_HTTPS_URL_REQUIRED";
+  if(endpoint){
+    const target=new URL("/health/unsubscribe",endpoint);
+    try{const response=await fetch(target,{signal:AbortSignal.timeout(5000),headers:{accept:"text/plain"}});passed=response.ok;diagnostic=passed?"PUBLIC_UNSUBSCRIBE_REACHABLE":`PUBLIC_UNSUBSCRIBE_HTTP_${response.status}`}catch(error){diagnostic=fetchDiagnostic(error,"PUBLIC_UNSUBSCRIBE_PROBE_FAILED")}
+  }
+  await prisma.phase0GateEvidence.upsert({where:{checkKey:"real.unsubscribe.endpoint"},create:{checkKey:"real.unsubscribe.endpoint",status:passed?"passed":"blocked",evidenceJson:{hostname:endpoint?.hostname??null,protocol:endpoint?.protocol??null,diagnostic}},update:{status:passed?"passed":"blocked",evidenceJson:{hostname:endpoint?.hostname??null,protocol:endpoint?.protocol??null,diagnostic},checkedAt:new Date()}});
   return {passed,diagnostic};
 }
 

@@ -13,6 +13,7 @@ type Domain = {
   provisioningVersion?: "V1_LEGACY_SEND_SUBDOMAIN" | "V2_ROOT_SENDER_DELEGATED_INFRA" | "V3_ROOT_SENDER_DELEGATED_EASY_DKIM" | "V3_ROOT_SENDER_PLATFORM_DKIM" | "V4_STATIC_BRANDED_BYODKIM" | "V5_STATIC_BRANDED_KLAVIYO";
   status?: string;
   authenticationStatus?: string;
+  lifecycleState?: string | null;
   readinessStatus?: string;
   readinessReasons?: string[];
 };
@@ -28,6 +29,26 @@ function isRootSenderVersion(version?: Domain["provisioningVersion"]) {
     || version === "V4_STATIC_BRANDED_BYODKIM"
     || version === "V5_STATIC_BRANDED_KLAVIYO";
 }
+
+function normalizeLocalPartInput(value: string, domain: string) {
+  const trimmed = value.trim();
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0) return trimmed;
+  const local = trimmed.slice(0, at);
+  const suffix = trimmed.slice(at + 1).toLowerCase();
+  const expected = domain.toLowerCase();
+  if (suffix === expected || suffix.endsWith(`.${expected}`)) return local;
+  return trimmed;
+}
+
+function senderIdentityErrorMessage(cause: unknown, domain?: string) {
+  const message = cause instanceof Error ? cause.message : "Unable to create sender identity";
+  if (message.includes("SENDER_LOCAL_PART_INVALID")) {
+    const suffix = domain ? ` @${domain}` : " the domain";
+    return `Enter only the part before @ (for example: engr). Do not include${suffix} — it is added automatically.`;
+  }
+  return message;
+}
 type Identity = { id: string; domainId: string; fromName: string; fromEmail: string; replyTo: string; status: string };
 
 export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) {
@@ -42,7 +63,7 @@ export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const eligibleDomains = useMemo(() => domains.filter((domain) => isBrandedMode(domain.provisioningMode)
-    ? domain.authenticationStatus === "verified"
+    ? domain.authenticationStatus === "verified" || String(domain.lifecycleState ?? "").toUpperCase() === "READY"
     : domain.status === "verified"), [domains]);
   const selectedDomain = useMemo(() => domains.find((domain) => domain.id === domainId), [domains, domainId]);
   const rootSender = isRootSenderVersion(selectedDomain?.provisioningVersion);
@@ -73,17 +94,18 @@ export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) 
     setMessage("");
     setError("");
     try {
+      const normalizedLocalPart = normalizeLocalPartInput(localPart, fixedDomain);
       await phase1Api(`/api/v1/workspaces/${workspaceId}/sender-identities`, {
         method: "POST",
         body: JSON.stringify(isBrandedMode(selectedDomain?.provisioningMode)
-          ? { domainId, fromName: fromName.trim(), localPart: localPart.trim(), replyTo: replyTo.trim() }
+          ? { domainId, fromName: fromName.trim(), localPart: normalizedLocalPart, replyTo: replyTo.trim() }
           : { domainId, fromName: fromName.trim(), fromEmail: legacyFromEmail.trim(), replyTo: replyTo.trim() }),
       });
       setFromName(""); setLocalPart(""); setLegacyFromEmail(""); setReplyTo("");
       setMessage("Sender identity saved");
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to create sender identity");
+      setError(senderIdentityErrorMessage(cause, fixedDomain));
     }
   }
 
@@ -104,7 +126,7 @@ export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) 
           <div className="filter-summary"><small>Sending domain</small><strong>{selectedDomain ? fixedDomain : "No sending domain configured"}</strong></div>
           <label>From name<input value={fromName} onChange={(event) => setFromName(event.target.value)} placeholder="Your team" required /></label>
           {isBrandedMode(selectedDomain?.provisioningMode)
-            ? <label>From address<div className="sender-address-field"><input value={localPart} onChange={(event) => setLocalPart(event.target.value)} placeholder="news" pattern="[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+" aria-describedby="sender-address-help" required/><span>@{fixedDomain}</span></div><small id="sender-address-help">Enter only the part before @. The sending domain is managed and cannot be changed here.</small></label>
+            ? <label>From address<div className="sender-address-field"><input value={localPart} onChange={(event) => setLocalPart(event.target.value)} onBlur={() => fixedDomain && setLocalPart((current) => normalizeLocalPartInput(current, fixedDomain))} placeholder="engr" pattern="[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+" aria-describedby="sender-address-help" required/><span>@{fixedDomain}</span></div><small id="sender-address-help">Enter only the part before @ (example: <code>engr</code>). The domain <code>@{fixedDomain}</code> is added automatically.</small></label>
             : <label>From email<input type="email" value={legacyFromEmail} onChange={(event) => setLegacyFromEmail(event.target.value)} placeholder="hello@your-domain.com" required /></label>}
           <label>Reply-to<input type="email" value={replyTo} onChange={(event) => setReplyTo(event.target.value)} placeholder="support@your-domain.com" required /></label>
           <button className="button-primary" type="submit" disabled={!selectedDomain || !eligibleDomains.length}>Create sender identity</button>

@@ -437,6 +437,66 @@ test("V3 delete treats missing Route 53 and SES resources as already cleaned up"
   assert.equal(patches.some(patch=>patch.lifecycleState==="FAILED"),false);
 });
 
+test("V3 delete still archives the workspace domain when SES cleanup fails", async () => {
+  const patches: Record<string, unknown>[] = [];
+  const audits: string[] = [];
+  let row: any = {
+    id: "domain-a",
+    workspaceId: "workspace-a",
+    domain: "velivoo.com",
+    rootDomain: "velivoo.com",
+    delegatedSubdomain: "send.velivoo.com",
+    provisioningMode: "branded_delegation",
+    provisioningVersion: "V3_ROOT_SENDER_DELEGATED_EASY_DKIM",
+    lifecycleState: "FAILED",
+    disconnectStatus: "failed",
+    providerReference: null,
+  };
+  const repo: any = {
+    findProvisioningDomain: async () => row,
+    holdDomainRoute: async () => undefined,
+    hasActiveDeliveryAttempts: async () => false,
+    updateProvisioningDomain: async ({ patch }: any) => {
+      patches.push(patch);
+      row = { ...row, ...patch };
+      return row;
+    },
+    listDnsEvidence: async () => [],
+    archiveProvisioningDomain: async () => {
+      row = { ...row, lifecycleState: "DELETED" };
+    },
+    recordAudit: async (input: any) => audits.push(input.action),
+  };
+  const email: any = {
+    removeIdentity: async () => {
+      throw new Error("EMAIL_IDENTITY_DELETE_FAILED");
+    },
+  };
+  const service = new DomainProvisioningService(
+    repo,
+    undefined,
+    email,
+    undefined,
+    {
+      sendingPrefix: "send",
+      mailFromPrefix: "bounce",
+      trackingPrefix: "click",
+      sesRegion: "us-east-1",
+      delegationSetReference: "delegation-a",
+      brandedNameserverDomain: "velivoo.com",
+      vanityNameservers: ["ns1.velivoo.com", "ns2.velivoo.com", "ns3.velivoo.com", "ns4.velivoo.com"],
+      dmarcPolicy: "v=DMARC1; p=none",
+      dmarcRequired: false,
+    },
+  );
+  const result = await service.archive("workspace-a", "domain-a");
+  assert.equal(result.archived, true);
+  assert.equal(row.lifecycleState, "DELETED");
+  assert.ok(audits.includes("domain.ses.delete_failed"));
+  assert.ok(audits.includes("domain.deleted"));
+  assert.equal(patches.some(patch => patch.lifecycleState === "FAILED"), false);
+});
+
 test("V3 delete falls back to the matching Route 53 zone and SES root when stored references are stale",async()=>{
   const deletedZones:string[]=[];const removedIdentities:any[]=[];const audits:string[]=[];
   let row:any={id:"domain-a",workspaceId:"workspace-a",domain:"hollapic.com",rootDomain:"hollapic.com",delegatedSubdomain:"send.hollapic.com",provisioningMode:"branded_delegation",provisioningVersion:"V3_ROOT_SENDER_DELEGATED_EASY_DKIM",provisioningCallerReference:"sender-domain:domain-a",hostedZoneReference:"STALE_ZONE",providerReference:null,trackingDomain:"click.send.hollapic.com",lifecycleState:"READY",authenticationStatus:"verified",readinessStatus:"ready"};

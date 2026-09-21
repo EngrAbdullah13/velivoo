@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { validateSegmentRule, type SegmentRule } from './segment-rules.js';
+export type ListEnrollmentMode='future_only'|'existing_and_future';
 export type FlowTrigger=
- |{type:'unconfigured'}|{type:'list_joined';listId:string}|{type:'segment_entered';segmentId:string}|{type:'profile_date';field:string;hour:number;minute:number;timezonePolicy:'profile_then_workspace'}|{type:'generic_event';eventName:string;schemaVersion:number}|{type:'manual_test'};
+ |{type:'unconfigured'}|{type:'list_joined';listId:string;enrollmentMode?:ListEnrollmentMode}|{type:'segment_entered';segmentId:string}|{type:'profile_date';field:string;hour:number;minute:number;timezonePolicy:'profile_then_workspace'}|{type:'generic_event';eventName:string;schemaVersion:number}|{type:'manual_test'};
 export type FlowNode3=
  |{id:string;type:'delay';durationSeconds:number}
  |{id:string;type:'wait_until';hour:number;minute:number;timezonePolicy:'profile_then_workspace'}
@@ -24,6 +25,11 @@ export function flowHasMarketingEmailNodes(g: FlowGraph3): boolean {
   return (g.nodes ?? []).some(n => n.type === 'email' && flowEmailNodeMode(n, null, g.trigger) === 'live');
 }
 
+/** Older published list flows replayed the active membership at activation. Preserve that behavior unless a newer version explicitly opts into future-only entry. */
+export function listTriggerIncludesExisting(trigger: FlowTrigger): boolean {
+  return trigger.type === 'list_joined' && (trigger.enrollmentMode ?? 'existing_and_future') === 'existing_and_future';
+}
+
 /** Persist the marketing eligibility gate when a flow sends live email but has no entry filters. */
 export function normalizeFlowGraph3(g: FlowGraph3): FlowGraph3 {
   if (!g.entryFilters?.length && flowHasMarketingEmailNodes(g)) {
@@ -39,6 +45,7 @@ export function validateFlow3(g:FlowGraph3):FlowIssue3[]{
  if(!g||g.schemaVersion!==1){issues.push(issue('GRAPH_SCHEMA_INVALID','$','This Flow uses an unsupported graph schema.'));return issues}
  if(!g.trigger||g.trigger.type==='unconfigured'||!['list_joined','segment_entered','profile_date','generic_event','manual_test'].includes(g.trigger.type))issues.push(issue('TRIGGER_REQUIRED','trigger','Select a trigger before publishing this Flow.'));
  else if(g.trigger.type==='list_joined'&&!g.trigger.listId)issues.push(issue('TRIGGER_REFERENCE_REQUIRED','trigger','Select the List that starts this Flow.'));
+ else if(g.trigger.type==='list_joined'&&g.trigger.enrollmentMode!==undefined&&!['future_only','existing_and_future'].includes(g.trigger.enrollmentMode))issues.push(issue('LIST_ENROLLMENT_MODE_INVALID','trigger.enrollmentMode','Choose whether existing List members should enter when this Flow is activated.'));
  else if(g.trigger.type==='segment_entered'&&!g.trigger.segmentId)issues.push(issue('TRIGGER_REFERENCE_REQUIRED','trigger','Select the Segment that starts this Flow.'));
  else if(g.trigger.type==='generic_event'&&(!g.trigger.eventName?.trim()||!Number.isInteger(g.trigger.schemaVersion)||g.trigger.schemaVersion<1))issues.push(issue('EVENT_TRIGGER_INVALID','trigger','Select a valid event schema.'));
  else if(g.trigger.type==='profile_date'&&(!g.trigger.field?.trim()||!Number.isInteger(g.trigger.hour)||g.trigger.hour<0||g.trigger.hour>23||!Number.isInteger(g.trigger.minute)||g.trigger.minute<0||g.trigger.minute>59||g.trigger.timezonePolicy!=='profile_then_workspace'))issues.push(issue('DATE_TRIGGER_INVALID','trigger','Select a typed date field, delivery time, and timezone policy.'));

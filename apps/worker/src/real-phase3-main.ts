@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPhase3Repository } from '../../../packages/persistence/src/prisma/phase3-repository.js';
 import { PrismaFlowRuleEvaluationPort,PrismaPhase2FlowMessagePort } from '../../../packages/persistence/src/prisma/phase3-runtime-adapters.js';
+import { resolveAudienceTransitionTiming } from '../../../packages/application/src/phase3/audience-transition.js';
 import { Phase3RuntimeService } from '../../../packages/application/src/phase3/phase3-runtime-service.js';
 import { SegmentProjectionService3 } from '../../../packages/application/src/phase3/segment-projection-service.js';
 import { createPhase3Worker,type Phase3Job } from '../../../packages/queue/src/bullmq/phase3-job-queue.js';
@@ -20,10 +21,16 @@ const rt=createPhase3Worker(redisUrl,async(job:Phase3Job)=>{
     return;
   }
   if(job.type==='phase3.audience.transition'){
-    const transition=job.audienceType==='list'?await (db as any).listMembership.findFirst({where:{workspaceId:job.workspaceId,id:job.transitionId,state:'active'}}):await (db as any).segmentMembershipTransition.findFirst({where:{workspaceId:job.workspaceId,id:job.transitionId,transition:'entered'}});if(!transition)return;
-    if(job.audienceType==='segment'){const run=await (db as any).segmentEvaluationRun.findFirst({where:{workspaceId:job.workspaceId,segmentId:transition.segmentId,segmentVersionId:transition.segmentVersionId},orderBy:{startedAt:'desc'}});if(run?.state!=='current'||!run.evaluatedAt||Date.now()-new Date(run.evaluatedAt).getTime()>15*60*1000)return}
-    const referenceId=job.audienceType==='list'?transition.listId:transition.segmentId,triggerType=job.audienceType==='list'?'list_joined':'segment_entered',occurredAt=transition.occurredAt??transition.joinedAt,dependencies=await (db as any).flowTriggerDependency.findMany({where:{workspaceId:job.workspaceId,triggerType,referenceId}});
-    for(const dependency of dependencies){const f=await repo.flow(job.workspaceId,dependency.flowId);if(!f||!['active','testing'].includes(f.status)||f.activeVersionId!==dependency.flowVersionId||!f.activeVersionActivatedAt||new Date(f.activeVersionActivatedAt)>new Date(occurredAt))continue;await runtime.enter({workspaceId:job.workspaceId,flowId:f.id,profileId:transition.profileId,triggerEventId:transition.id,triggerKey:`audience:${job.audienceType}:${transition.id}`,now:occurredAt}).catch(err=>{if(!String(err?.message??err).includes('FLOW_ENTRIES_BLOCKED'))throw err})}
+    const transition=job.audienceType==='list'?await (db as any).listMembership.findFirst({where:{workspaceId:job.workspaceId,id:job.transitionId}}):await (db as any).segmentMembershipTransition.findFirst({where:{workspaceId:job.workspaceId,id:job.transitionId,transition:'entered'}});
+    const profileId=job.profileId??transition?.profileId,referenceId=job.referenceId??(job.audienceType==='list'?transition?.listId:transition?.segmentId);
+    if(!profileId||!referenceId)return;
+    // New jobs carry the immutable outbox event data. The transition lookup is
+    // retained only for jobs published before event identities were added.
+    if(!job.eventId&&job.audienceType==='list'&&transition?.state!=='active')return;
+    if(job.audienceType==='segment'){if(!transition)return;const run=await (db as any).segmentEvaluationRun.findFirst({where:{workspaceId:job.workspaceId,segmentId:transition.segmentId,segmentVersionId:transition.segmentVersionId},orderBy:{startedAt:'desc'}});if(run?.state!=='current'||!run.evaluatedAt||Date.now()-new Date(run.evaluatedAt).getTime()>15*60*1000)return}
+    const triggerType=job.audienceType==='list'?'list_joined':'segment_entered',joinedAt=new Date(job.occurredAt??transition?.occurredAt??transition?.joinedAt),dependencies=await (db as any).flowTriggerDependency.findMany({where:{workspaceId:job.workspaceId,triggerType,referenceId,...(job.flowVersionId?{flowVersionId:job.flowVersionId}:{})}}),triggerEventId=job.eventId??transition?.id??job.transitionId;
+    if(Number.isNaN(joinedAt.getTime()))return;
+    for(const dependency of dependencies){const f=await repo.flow(job.workspaceId,dependency.flowId);if(!f||!['active','testing'].includes(f.status)||f.activeVersionId!==dependency.flowVersionId||!f.activeVersionActivatedAt)continue;const timing=resolveAudienceTransitionTiming({joinedAt,flowActivatedAt:new Date(f.activeVersionActivatedAt)});if(!timing.eligible)continue;await runtime.enter({workspaceId:job.workspaceId,flowId:f.id,profileId,triggerEventId,triggerKey:`audience:${job.audienceType}:${triggerEventId}`,now:timing.occurredAt}).catch(err=>{if(!String(err?.message??err).includes('FLOW_ENTRIES_BLOCKED'))throw err})}
     return;
   }
   const action=await repo.scheduledAction(job.workspaceId,job.actionId);if(!action)return;await runtime.executeAction(action,new Date());

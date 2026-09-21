@@ -59,17 +59,41 @@ function versionAtLeast(version: string, minimum: string): boolean {
   return true;
 }
 
-async function redisServerVersion(url: string): Promise<string | null> {
+async function withRedisClient<T>(url: string, run: (client: import("ioredis").Redis) => Promise<T>): Promise<T | null> {
   try {
-    const { default: IORedis } = await import("ioredis");
-    const client = new IORedis(url, { maxRetriesPerRequest: 1, connectTimeout: 2000, lazyConnect: true });
+    const { Redis } = await import("ioredis");
+    const client = new Redis(url, { maxRetriesPerRequest: 1, connectTimeout: 2000, lazyConnect: true });
     await client.connect();
-    const info = await client.info("server");
-    await client.quit();
-    return info.match(/redis_version:(\S+)/)?.[1] ?? null;
+    try {
+      return await run(client);
+    } finally {
+      await client.quit();
+    }
   } catch {
     return null;
   }
+}
+
+async function redisServerVersion(url: string): Promise<string | null> {
+  return withRedisClient(url, async (client) => {
+    const info = await client.info("server");
+    return info.match(/redis_version:(\S+)/)?.[1] ?? null;
+  });
+}
+
+async function redisWriteHealthy(url: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const probeKey = `velivoo:dev-all:write-probe:${process.pid}`;
+  const result = await withRedisClient(url, async (client) => {
+    await client.set(probeKey, "1", "EX", 30);
+    await client.del(probeKey);
+    return true as const;
+  });
+  if (result) return { ok: true };
+  return {
+    ok: false,
+    reason:
+      "Redis accepts connections but rejected writes (often MISCONF / RDB snapshot failure on Windows). Queue workers cannot run until writes succeed.",
+  };
 }
 
 async function assertDevPortsAvailable() {
@@ -98,31 +122,43 @@ const programs: Array<{ name: string; command: string; args: string[]; cwd: stri
   { name: "Domain verification worker", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/branded-domain-verification-worker.ts"], cwd: root },
 ];
 
-if (config.deliveryQueueEnabled) {
-  programs.push({ name: "Delivery worker", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/real-phase2-main.ts"], cwd: root });
-}
-
 const redisUrl = process.env.REDIS_URL?.trim();
 const REDIS_MIN_VERSION = "5.0.0";
+let queueAutomationStarted = false;
+
 if (redisUrl) {
   const { host, port } = parseRedisEndpoint(redisUrl);
   if (await redisReachable(redisUrl)) {
     const version = await redisServerVersion(redisUrl);
     if (version && versionAtLeast(version, REDIS_MIN_VERSION)) {
-      programs.push(
-        { name: "Feedback worker", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/real-main.ts"], cwd: root },
-        { name: "Feedback scheduler", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/scheduler/src/real-main.ts"], cwd: root },
-      );
-      if (config.deliveryQueueEnabled) {
+      const writeHealth = await redisWriteHealthy(redisUrl);
+      if (!writeHealth.ok) {
+        console.warn("");
+        console.warn(`Redis at ${host}:${port} is reachable but not writable.`);
+        console.warn(writeHealth.reason);
+        console.warn("Fix Redis, or set EMAIL_PLATFORM_DELIVERY_QUEUE_ENABLED=false and restart to use local proof automation.");
+        console.warn("Quick Redis fix (run in a separate terminal):");
+        console.warn("  redis-cli CONFIG SET stop-writes-on-bgsave-error no");
+        console.warn("Or install Memurai (recommended on Windows): winget install Memurai.MemuraiDeveloper");
+        console.warn("");
+      } else {
         programs.push(
-          { name: "Flow worker", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/real-phase3-main.ts"], cwd: root },
-          { name: "Flow scheduler", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/scheduler/src/real-phase3-main.ts"], cwd: root },
+          { name: "Feedback worker", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/real-main.ts"], cwd: root },
+          { name: "Feedback scheduler", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/scheduler/src/real-main.ts"], cwd: root },
         );
+        if (config.deliveryQueueEnabled) {
+          programs.push(
+            { name: "Delivery worker", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/real-phase2-main.ts"], cwd: root },
+            { name: "Flow worker", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/real-phase3-main.ts"], cwd: root },
+            { name: "Flow scheduler", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/scheduler/src/real-phase3-main.ts"], cwd: root },
+          );
+          queueAutomationStarted = true;
+        }
       }
     } else {
       console.warn("");
       console.warn(`Redis at ${host}:${port} is version ${version ?? "unknown"}. BullMQ requires ${REDIS_MIN_VERSION}+.`);
-      console.warn("Skipping feedback worker and scheduler.");
+      console.warn("Queue workers will not start; falling back to local proof automation when allowed.");
       console.warn("On Windows, replace legacy Redis 3.x with Memurai (Redis 6 compatible):");
       console.warn("  winget uninstall Redis.Redis");
       console.warn("  winget install Memurai.MemuraiDeveloper");
@@ -131,7 +167,7 @@ if (redisUrl) {
     }
   } else {
     console.warn("");
-    console.warn(`Redis is not running at ${host}:${port}. Skipping feedback worker and scheduler.`);
+    console.warn(`Redis is not running at ${host}:${port}. Queue workers will not start.`);
     console.warn("Install Memurai (recommended on Windows, no Docker):");
     console.warn("  winget install Memurai.MemuraiDeveloper");
     console.warn("Then start Memurai and run npm run dev:all again.");
@@ -139,11 +175,17 @@ if (redisUrl) {
   }
 }
 
-// The production services use Redis-backed workers.  Proof/development mode
-// also has a durable PostgreSQL-backed runner so Flow tests work on a normal
-// local machine when Redis is intentionally not installed.
-if (config.runtimeMode !== "production" && !config.deliveryQueueEnabled) {
+// Proof/development mode keeps a PostgreSQL-backed runner so list-triggered flows
+// and message policy still progress when Redis is missing or queue mode is off.
+if (config.runtimeMode !== "production" && !queueAutomationStarted) {
   programs.push({ name: "Local proof automation", command: process.execPath, args: ["--env-file=.env", "--import", "tsx", "apps/worker/src/local-proof-automation.ts"], cwd: root });
+}
+
+if (config.runtimeMode === "production") {
+  console.warn("");
+  console.warn("EMAIL_PLATFORM_RUNTIME_MODE=production disables local proof automation.");
+  console.warn("List-triggered flows require Redis-backed workers. Ensure Redis 5+ is running and EMAIL_PLATFORM_DELIVERY_QUEUE_ENABLED=true.");
+  console.warn("");
 }
 
 await assertDevPortsAvailable();

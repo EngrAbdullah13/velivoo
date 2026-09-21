@@ -93,7 +93,7 @@ export function staticLifecycleState(input:{deleting?:boolean;deleted?:boolean;f
   if(input.deleting)return "DELETING";
   if(input.failed)return "FAILED";
   if(input.ready)return "READY";
-  const customerDnsReady=input.ownershipVerified&&(input.sendRoutingVerified??true)&&input.dkimDnsVerified;
+  const customerDnsReady=input.ownershipVerified&&input.dkimDnsVerified;
   if(!customerDnsReady)return "WAITING_FOR_DNS";
   if(!input.sesIdentitySuccess)return "SES_VERIFYING";
   if(!input.dkimSuccess)return "DKIM_VERIFYING";

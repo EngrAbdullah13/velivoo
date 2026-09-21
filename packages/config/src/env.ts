@@ -144,6 +144,18 @@ export function loadEmailPlatformConfig(env: Env = process.env): EmailPlatformCo
 
 const email = loadEmailPlatformConfig();
 
+/** Local/dev stacks often submit to SES without reachable SNS delivery callbacks. */
+export function confirmDeliveryWithoutFeedback(
+  config: EmailPlatformConfig,
+  publicBaseUrl = process.env.EMAIL_PLATFORM_PUBLIC_BASE_URL ?? "http://localhost:4001",
+): boolean {
+  const explicit = process.env.EMAIL_PLATFORM_CONFIRM_DELIVERY_WITHOUT_FEEDBACK;
+  if (explicit !== undefined && explicit.trim() !== "") return parseBoolean(explicit);
+  if (config.runtimeMode === "proof" || config.runtimeMode === "development") return true;
+  const base = publicBaseUrl.toLowerCase();
+  return base.includes("localhost") || base.includes("127.0.0.1");
+}
+
 export const config = {
   apiPort: int("EMAIL_PLATFORM_API_PORT", 4000),
   publicApiPort: int("EMAIL_PLATFORM_PUBLIC_API_PORT", 4001),

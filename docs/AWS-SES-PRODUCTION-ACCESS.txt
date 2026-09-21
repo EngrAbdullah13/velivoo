@@ -1,0 +1,189 @@
+================================================================================
+  AMAZON SES PRODUCTION ACCESS — VELOIVOO BACKEND TECHNICAL SUPPLEMENT
+  Includes: bounce, complaint, unsubscribe backend flows + pre-send policy
+  September 2026
+================================================================================
+
+SAVE AS PDF: Open AWS-SES-PRODUCTION-ACCESS.html in browser → Ctrl+P → Save as PDF
+
+
+REPLY TO AWS (paste into existing support case)
+------------------------------------------------
+Hello AWS SES Team,
+
+Thank you for reviewing our request. Below is detailed information about our
+use case and how our backend automatically handles bounces, complaints, and
+unsubscribe requests. We respectfully ask that you re-evaluate our request for
+production access. A technical supplement describes our implementation.
+
+
+1. PLATFORM OVERVIEW
+--------------------
+Product:     Velivoo (https://velivoo.com)
+Type:        Permission-based B2B email marketing SaaS
+First customer: Lahori X Solutions — lahorixsolutions.com (verified via Velivoo)
+
+Each customer verifies their own domain. Mail sends From customer domain
+(e.g. engr@lahorixsolutions.com). We do not send unsolicited or purchased lists.
+
+
+2. BACKEND ARCHITECTURE
+-----------------------
+Public API (port 4001)  → Receives signed SNS feedback; unsubscribe pages
+Feedback worker         → Applies bounce/complaint to DB + suppressions
+Delivery worker         → Renders email, pre-send policy, submits to SES
+PostgreSQL              → Profiles, consent, messages, suppressions, inbox
+Redis + BullMQ          → Dispatches feedback jobs after durable inbox write
+
+CRITICAL: SNS events are PERSISTED TO DATABASE before HTTP 200 is returned.
+If Redis fails, scheduler replays from InboxMessage table.
+
+
+3. DATABASE TABLES (COMPLIANCE)
+-------------------------------
+Profile           — recipient email, name per workspace
+ConsentRecord     — append-only consent granted/withdrawn
+SubscriptionState — current marketing subscription status
+Suppression       — protected blocks: complaint, hard_bounce, global_unsubscribe
+Message           — each outbound email with lifecycle state
+DeliveryAttempt   — links internal message to SES providerMessageId
+DeliveryEvent     — immutable SES feedback log
+InboxMessage      — durable SNS + unsubscribe receipts
+TraceEvent        — audit trail
+
+
+4. OPT-IN + PRE-SEND POLICY
+---------------------------
+Contacts enter via: manual create with consent, CSV import with consent
+mapping, or API with linked profile.
+
+Before SES submission, evaluateMessagePolicy() runs. Message SKIPPED if:
+  - PROTECTED_SUPPRESSION (complaint / hard bounce / unsubscribe)
+  - NO_MARKETING_CONSENT
+  - RECIPIENT_INVALID
+  - Sender not ready, operational hold, frequency cap, quiet hours
+
+Protected suppressions: protected=true AND revokedAt IS NULL.
+Manual revocation of protected suppressions is blocked.
+
+
+5. BOUNCE — FULL BACKEND FLOW
+-----------------------------
+Step 1: SES Configuration Set → SNS topic → Bounce event
+
+Step 2: POST /public/v1/provider/ses
+  - Verify SNS RSA signature (AWS cert from sns.amazonaws.com)
+  - Verify TopicArn matches EMAIL_PLATFORM_SNS_TOPIC_ARN
+  - Normalize: eventType, providerMessageId, bounceType (Permanent/Transient)
+
+Step 3: Correlate (tenant-safe)
+  - Create InboxMessage keyed by providerEventId (dedupe)
+  - Find DeliveryAttempt by providerMessageId
+  - Load Message; verify workspace authority
+  - Unmatched events: status=unmatched, no tenant applied
+  - Enqueue feedback.apply job; return 200 after DB persist
+
+Step 4: Feedback worker — ONE TRANSACTION (processFeedbackInbox)
+  - Insert DeliveryEvent (dedupe on providerEventId)
+  - Update Message.state via projectProviderFeedbackState()
+  - PERMANENT bounce only:
+      Suppression: reason=hard_bounce, scope=delivery, protected=true
+      Cancel pending messages for same profile
+  - TRANSIENT bounce: log only, no permanent suppression
+  - Mark inbox processed; TraceEvent feedback.bounce
+
+Step 5: Future sends → evaluatePolicy finds suppression → SKIP (not sent to SES)
+
+
+6. COMPLAINT — FULL BACKEND FLOW
+--------------------------------
+Steps 1–3: Same as bounce (SNS verify, inbox, correlate, queue)
+
+Step 4: Feedback worker — ONE TRANSACTION
+  - DeliveryEvent eventType=complaint
+  - Message.state = complained
+  - Suppression: reason=complaint, scope=GLOBAL, protected=true
+  - Cancel all pending marketing messages for profile
+  - TraceEvent feedback.complaint
+
+Step 5: State priority (cannot downgrade):
+  Complaint (100) > Bounce (90) > Failed (80) > Delivered (70)
+  Late Delivery event cannot overwrite earlier Complaint.
+
+
+7. UNSUBSCRIBE — FULL BACKEND FLOW
+----------------------------------
+Step 1: Render time — unique HMAC-signed token per recipient
+  URL: GET /public/v1/unsubscribe?token=<signed>
+  Footer: business name, address, unsubscribe link
+
+Step 2: GET shows confirmation page — GET ALONE DOES NOT UNSUBSCRIBE
+  (Prevents email scanner false unsubscribes)
+
+Step 3: POST → applyOneClickUnsubscribe() → applyMarketingUnsubscribe()
+  ONE TRANSACTION:
+  - Verify HMAC token (EMAIL_PLATFORM_UNSUBSCRIBE_SIGNING_SECRET)
+  - InboxMessage source=one_click_unsubscribe (dedupe by token hash)
+  - ConsentRecord status=withdrawn
+  - SubscriptionState currentStatus=withdrawn
+  - Suppression reason=global_unsubscribe, scope=global, protected=true
+  - Cancel pending messages (created, evaluating, eligible, rendered, held)
+  - TraceEvent EMAIL_MARKETING_UNSUBSCRIBED
+
+Step 4: Idempotent — duplicate clicks return success safely
+
+Step 5: Future sends blocked by suppression + withdrawn consent
+
+
+8. MESSAGE STATE PROJECTION
+---------------------------
+delivery          → delivered       (no suppression)
+bounce Permanent  → bounced         (hard_bounce suppression)
+bounce Transient  → bounced         (no permanent suppression)
+complaint         → complained      (global complaint suppression)
+reject            → failed          (no suppression)
+delay             → unchanged       (no suppression)
+
+
+9. SEND PIPELINE
+----------------
+1. Flow/campaign creates Message with profileId + email version
+2. evaluatePolicy() — consent, suppression, sender, frequency
+3. Render with recipient unsubscribe URL + compliance footer
+4. Submit to SES with configuration set + platformMessageId tag
+5. Feedback via SNS → Sections 5–7
+
+
+10. DOMAIN / AUTH
+-----------------
+Per customer: SES Easy DKIM on root domain, custom MAIL FROM
+(bounce.send.domain), workspace configuration set + SNS destination.
+Events: Delivery, Bounce, Complaint, Reject, DeliveryDelay.
+
+
+11. VOLUME
+----------
+Initial: 50–200/day | 3–6 months: up to 1,000–5,000/day
+First customer Lahori X: low volume, opted-in only
+
+
+12. SAMPLE EMAIL
+----------------
+Subject: Welcome to Lahori X Solutions
+
+Hi [First Name],
+Thank you for subscribing...
+[Signed unsubscribe URL — unique per recipient]
+Lahori X Solutions · [Address]
+
+
+13. COMPLIANCE
+--------------
+Velivoo aligns with AWS AUP, Service Terms, SES best practices.
+Bounces, complaints, unsubscribes are automated with durable DB storage,
+protected suppressions, and pre-send blocking.
+
+Thank you for your consideration.
+[Your name] · [Title] · Velivoo · [Email]
+
+================================================================================

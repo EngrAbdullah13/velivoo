@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPhase3Repository } from "../../../packages/persistence/src/prisma/phase3-repository.js";
 import { PrismaFlowRuleEvaluationPort, PrismaPhase2FlowMessagePort } from "../../../packages/persistence/src/prisma/phase3-runtime-adapters.js";
+import { resolveAudienceTransitionTiming } from "../../../packages/application/src/phase3/audience-transition.js";
 import { Phase3RuntimeService } from "../../../packages/application/src/phase3/phase3-runtime-service.js";
 import { PrismaPhase2Repository } from "../../../packages/persistence/src/prisma/phase2-repository.js";
 import { Phase2Service } from "../../../packages/application/src/phase2/phase2-service.js";
@@ -8,14 +9,15 @@ import { LocalObjectStore } from "../../../packages/object-store/src/local-objec
 import { DisabledEmailProvider } from "../../../packages/provider-email/src/disabled-email-provider.js";
 import { SesEmailProvider } from "../../../packages/provider-email/src/ses/ses-provider.js";
 import type { EmailDeliveryProvider } from "../../../packages/application/src/ports/email-delivery-provider.js";
-import { loadEmailPlatformConfig } from "../../../packages/config/src/env.js";
+import { confirmDeliveryWithoutFeedback, loadEmailPlatformConfig } from "../../../packages/config/src/env.js";
 
 // Local proof mode intentionally uses PostgreSQL as the durable queue.  This
 // lets a developer exercise real Flow entry, scheduled actions, Message
 // Policy, rendering and SES submission without pretending Redis is available.
 // It is never started in production; production uses the queue workers.
 const config = loadEmailPlatformConfig();
-if (config.runtimeMode === "production") throw new Error("LOCAL_PROOF_AUTOMATION_NOT_ALLOWED_IN_PRODUCTION");
+const runtimeMode = config.runtimeMode;
+if (runtimeMode === "production") throw new Error("LOCAL_PROOF_AUTOMATION_NOT_ALLOWED_IN_PRODUCTION");
 
 const db = new PrismaClient();
 const phase3Repo = new PrismaPhase3Repository(db);
@@ -32,7 +34,8 @@ const delivery = new Phase2Service(phase2Repo, objects, provider, {
   maxMessageBytes: Number(process.env.EMAIL_PLATFORM_MAX_MESSAGE_BYTES ?? 500000),
   providerReady: provider.name !== "disabled",
   requireWorkspaceConfigurationSet: false,
-  unsubscribePublicBaseOnly: config.runtimeMode !== "production",
+  unsubscribePublicBaseOnly: true,
+  confirmDeliveryWithoutFeedback: confirmDeliveryWithoutFeedback(config),
 });
 
 async function markPublished(id: string) {
@@ -51,8 +54,10 @@ async function routeListJoin(workspaceId: string, membershipId: string) {
   for (const dependency of dependencies) {
     const flow = await phase3Repo.flow(workspaceId, dependency.flowId);
     const joinedAt = new Date(membership.joinedAt);
-    if (!flow || !["active", "testing"].includes(flow.status) || flow.activeVersionId !== dependency.flowVersionId || !flow.activeVersionActivatedAt || new Date(flow.activeVersionActivatedAt) > joinedAt) continue;
-    await runtime.enter({ workspaceId, flowId: flow.id, profileId: membership.profileId, triggerEventId: membership.id, triggerKey: `audience:list:${membership.id}`, now: joinedAt });
+    if (!flow || !["active", "testing"].includes(flow.status) || flow.activeVersionId !== dependency.flowVersionId || !flow.activeVersionActivatedAt) continue;
+    const timing = resolveAudienceTransitionTiming({ joinedAt, flowActivatedAt: new Date(flow.activeVersionActivatedAt) });
+    if (!timing.eligible) continue;
+    await runtime.enter({ workspaceId, flowId: flow.id, profileId: membership.profileId, triggerEventId: membership.id, triggerKey: `audience:list:${membership.id}`, now: timing.occurredAt });
   }
 }
 

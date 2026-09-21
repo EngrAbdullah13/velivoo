@@ -51,6 +51,8 @@ test("Klaviyo-style static DNS helpers generate Velivoo-branded hostnames", () =
   assert.equal(staticBrandedZoneApex("dkim.velivoo.com"), "velivoo.com");
   assert.equal(staticBrandedSendRoutingHost(routingId, "send.velivoo.com"), "d_8d42a932.send.velivoo.com");
   assert.equal(staticSendCustomerHost("example.com"), "send.example.com");
+  assert.equal(staticSendCustomerHost("velivoo.com", "send.velivoo.com"), "links.velivoo.com");
+  assert.equal(staticSendCustomerHost("example.com", "send.velivoo.com"), "send.example.com");
   assert.equal(staticBrandedMailFromDomain("example.com"), "bounce.example.com");
   assert.deepEqual(staticBrandedMailFromRecords("example.com", "eu-north-1"), [
     { type: "MX", name: "bounce.example.com", values: ["10 feedback-smtp.eu-north-1.amazonses.com"], ttl: 300, priority: 10, exchange: "feedback-smtp.eu-north-1.amazonses.com" },
@@ -239,11 +241,12 @@ test("static branded provisioner creates Klaviyo-style customer records without 
   const created = await service.create("ws-1", "example.com");
   assert.equal(created.setupMode, SETUP_MODE_STATIC_BRANDED);
   assert.equal(created.provisioningVersion, V5_STATIC_BRANDED_KLAVIYO);
-  assert.ok(created.customerRecords.length >= 4);
+  assert.equal(created.customerRecords.length, 5);
+  assert.equal(created.productionDnsRecordCount, 5);
   assert.equal(created.mailFromDomain, "bounce.example.com");
   assert.ok(created.customerRecords.filter((record: any) => !["mail_from_mx", "mail_from_spf"].includes(String(record.purpose))).every((record: any) => !String(record.value).includes("amazonses.com")));
   assert.ok(created.customerRecords.some((record: any) => record.name === "example.com"));
-  assert.ok(created.customerRecords.some((record: any) => record.name === "send.example.com"));
+  assert.ok(!created.customerRecords.some((record: any) => record.purpose === "send_routing"));
   assert.ok(created.customerRecords.some((record: any) => record.name === "vm1._domainkey.example.com"));
   assert.ok(created.customerRecords.some((record: any) => record.name === "vm2._domainkey.example.com"));
   assert.ok(!containsPrivateKeyMaterial(JSON.stringify(created)));

@@ -54,7 +54,7 @@ export function AppShell({ workspaceId, children, initialSidebarCompact = false 
 
   const audienceActive = Boolean(pathname?.includes('/profiles') || pathname?.includes('/audiences'));
   const current = audienceActive ? (pathname?.includes('/profiles') ? 'Contacts' : pathname?.includes('/segments') ? 'Segments' : 'Lists') : navItems.find(item => pathname?.includes(`/${item.path.split('/')[0]}`))?.label ?? 'Home';
-  const isTemplateEditor = Boolean(pathname?.includes('/content/templates/') && pathname.endsWith('/edit'));
+  const isTemplateEditor = Boolean((pathname?.includes('/content/templates/') || pathname?.includes('/content/emails/')) && pathname.endsWith('/edit'));
   const isFlowBuilder = Boolean(pathname?.includes('/flows/') && pathname.endsWith('/builder'));
   const isFullscreenEditor = isTemplateEditor || isFlowBuilder;
   const hasResults = Boolean(searchData && (searchData.profiles.length || searchData.flows.length || searchData.messages.length));

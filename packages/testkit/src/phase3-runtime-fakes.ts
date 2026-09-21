@@ -9,5 +9,5 @@ export class InMemoryFlowMessagePort implements Phase2FlowMessagePort{
 
 export class StaticRuleEvaluationPort implements FlowRuleEvaluationPort{
   constructor(private readonly value=true,private readonly byType:Record<string,boolean>={}){}
-  async evaluate(i:{workspaceId:string;profileId:string;rule:any;at:Date}){const type=String(i.rule?.type??'unknown'),result=this.byType[type]??this.value;return {result,evidence:{ruleType:type,evaluatedAt:i.at.toISOString(),profileId:i.profileId}}}
+  async evaluate(i:{workspaceId:string;profileId:string;rule:any;at:Date}){const type=String(i.rule?.type??'unknown'),result=this.byType[type]??(type==='eligibility'?true:this.value);return {result,evidence:{ruleType:type,evaluatedAt:i.at.toISOString(),profileId:i.profileId}}}
 }

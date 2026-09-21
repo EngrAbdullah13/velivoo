@@ -36,3 +36,8 @@ export function localCalendarDateInstant(input:{date:Date;timeZone:string;hour:n
   }
   throw new Error('DATE_TRIGGER_TIME_UNRESOLVABLE');
 }
+
+/** List/segment joins before activation are clamped so Apply changes can enter existing members. */
+export function audienceTransitionOccurredAt(joinedAt: Date, flowActivatedAt: Date): Date {
+  return joinedAt.getTime() < flowActivatedAt.getTime() ? flowActivatedAt : joinedAt;
+}

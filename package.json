@@ -24,6 +24,7 @@
     "check": "npm run typecheck && npm test",
     "db:generate": "prisma generate --schema packages/persistence/prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema packages/persistence/prisma/schema.prisma",
+    "audit:email-template-migration": "node --env-file=.env --import tsx scripts/audit-email-template-migration.ts",
     "web:typecheck": "npm --workspace @email-platform/web run typecheck",
     "web:build": "npm --workspace @email-platform/web run build"
   },

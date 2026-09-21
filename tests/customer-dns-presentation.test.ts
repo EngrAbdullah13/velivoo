@@ -24,6 +24,20 @@ test("dnsHostForProvider returns short host labels for registrar panels", () => 
   });
 });
 
+test("presentCustomerDnsRecord exposes DMARC copy fields", () => {
+  const presentation = presentCustomerDnsRecord({
+    type: "TXT",
+    name: "_dmarc.lahorixsolutions.com",
+    value: "v=DMARC1; p=none",
+    purpose: "dmarc_advisory",
+    rootDomain: "lahorixsolutions.com",
+  });
+  assert.equal(presentation.title, "DMARC policy (TXT)");
+  assert.equal(presentation.host.value, "_dmarc");
+  assert.equal(presentation.fields[0]?.value, "v=DMARC1; p=none");
+  assert.match(presentation.instructions, /never creates or overwrites/i);
+});
+
 test("presentCustomerDnsRecord exposes separate MX copy fields", () => {
   const presentation = presentCustomerDnsRecord({
     type: "MX",

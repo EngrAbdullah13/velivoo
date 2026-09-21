@@ -274,13 +274,22 @@ export class DomainProvisioningService {
     try{
       const root=domain.rootDomain??domain.domain;
       const sesIdentity=isRootSenderVersion(domain.provisioningVersion)?root:(domain.delegatedSubdomain??domain.domain);
-      let sesAlreadyMissing=false,zoneAlreadyMissing=false;
-      if(this.tracking&&domain.trackingDomain)await this.tracking.remove({hostname:domain.trackingDomain,tenantReference:domain.trackingTenantReference??undefined});
+      let sesAlreadyMissing=false,zoneAlreadyMissing=false,sesDeleteFailed=false,zoneDeleteFailed=false;
+      if(this.tracking&&domain.trackingDomain){
+        try{await this.tracking.remove({hostname:domain.trackingDomain,tenantReference:domain.trackingTenantReference??undefined})}
+        catch(error){deleteTrace("tracking.delete.failed",{workspaceId,domainId,hostname:domain.trackingDomain,code:errorCode(error),message:error instanceof Error?error.message:String(error)})}
+      }
       if(this.email&&(domain.providerReference||isRootSenderVersion(domain.provisioningVersion))){
         deleteTrace("ses.delete.start",{workspaceId,domainId,identity:sesIdentity,hasReference:Boolean(domain.providerReference)});
-        const ses=await this.email.removeIdentity({domain:sesIdentity,reference:domain.providerReference??undefined});
-        sesAlreadyMissing=Boolean(ses?.alreadyMissing);
-        deleteTrace(sesAlreadyMissing?"ses.delete.already_missing":"ses.delete.done",{workspaceId,domainId,identity:sesIdentity});
+        try{
+          const ses=await this.email.removeIdentity({domain:sesIdentity,reference:domain.providerReference??undefined});
+          sesAlreadyMissing=Boolean(ses?.alreadyMissing);
+          deleteTrace(sesAlreadyMissing?"ses.delete.already_missing":"ses.delete.done",{workspaceId,domainId,identity:sesIdentity});
+        }catch(error){
+          sesDeleteFailed=true;
+          deleteTrace("ses.delete.failed",{workspaceId,domainId,identity:sesIdentity,code:errorCode(error),message:error instanceof Error?error.message:String(error)});
+          await this.audit({...domain,lifecycleState:"DELETING"},"domain.ses.delete_failed",{identity:sesIdentity,providerReference:domain.providerReference,code:errorCode(error)});
+        }
       }
       else deleteTrace("ses.delete.skipped",{workspaceId,domainId,reason:!this.email?"email_provider_missing":"no_provider_reference"});
       const zoneName=domain.delegatedSubdomain??infraDomain(root),findHostedZone=async()=>this.dns?.findZoneByName&&domain.provisioningCallerReference?await this.dns.findZoneByName(zoneName,domain.provisioningCallerReference):null;
@@ -288,24 +297,30 @@ export class DomainProvisioningService {
       if(hostedZoneReference&&this.dns){
         const evidence=await this.repo.listDnsEvidence(workspaceId,domainId,false),allowed=evidence.map(row=>({type:row.recordType as ManagedDnsRecord["type"],name:row.name,values:[row.expectedValue],ttl:300}));
         deleteTrace("route53.cleanup.start",{workspaceId,domainId,hostedZoneReference,allowedRecordCount:allowed.length});
-        let zone=await this.dns.deleteZoneSafely({zoneReference:hostedZoneReference,allowedRecords:allowed});
-        if(zone.alreadyMissing){
-          const fallback=await findHostedZone();
-          if(fallback?.reference&&fallback.reference!==hostedZoneReference){
-            hostedZoneReference=fallback.reference;
-            deleteTrace("route53.cleanup.fallback",{workspaceId,domainId,hostedZoneReference});
-            zone=await this.dns.deleteZoneSafely({zoneReference:hostedZoneReference,allowedRecords:allowed});
+        try{
+          let zone=await this.dns.deleteZoneSafely({zoneReference:hostedZoneReference,allowedRecords:allowed});
+          if(zone.alreadyMissing){
+            const fallback=await findHostedZone();
+            if(fallback?.reference&&fallback.reference!==hostedZoneReference){
+              hostedZoneReference=fallback.reference;
+              deleteTrace("route53.cleanup.fallback",{workspaceId,domainId,hostedZoneReference});
+              zone=await this.dns.deleteZoneSafely({zoneReference:hostedZoneReference,allowedRecords:allowed});
+            }
           }
+          zoneAlreadyMissing=Boolean(zone.alreadyMissing);
+          deleteTrace(zoneAlreadyMissing?"route53.cleanup.already_missing":"route53.cleanup.done",{workspaceId,domainId,hostedZoneReference});
+        }catch(error){
+          zoneDeleteFailed=true;
+          deleteTrace("route53.cleanup.failed",{workspaceId,domainId,hostedZoneReference,code:errorCode(error),message:error instanceof Error?error.message:String(error)});
+          await this.audit({...domain,lifecycleState:"DELETING"},"domain.route53.delete_failed",{hostedZoneReference,code:errorCode(error)});
         }
-        zoneAlreadyMissing=Boolean(zone.alreadyMissing);
-        deleteTrace(zoneAlreadyMissing?"route53.cleanup.already_missing":"route53.cleanup.done",{workspaceId,domainId,hostedZoneReference});
       }
       else deleteTrace("route53.cleanup.skipped",{workspaceId,domainId,reason:!this.dns?"dns_provider_missing":"no_hosted_zone_reference"});
       if(sesAlreadyMissing)await this.audit({...domain,lifecycleState:"DELETING"},"domain.ses.already_deleted",{identity:sesIdentity,providerReference:domain.providerReference});
       if(zoneAlreadyMissing)await this.audit({...domain,lifecycleState:"DELETING"},"domain.route53.already_deleted",{hostedZoneReference});
       await this.repo.archiveProvisioningDomain(workspaceId,domainId,new Date());
-      deleteTrace("lifecycle.DELETED",{workspaceId,domainId,rootDomain:root,sesAlreadyMissing,zoneAlreadyMissing});
-      await this.audit({...domain,lifecycleState:"DELETED"},"domain.deleted",{rootDomain:root,sesIdentityRemoved:Boolean(domain.providerReference||isRootSenderVersion(domain.provisioningVersion)),hostedZoneRemoved:Boolean(hostedZoneReference),sesAlreadyMissing,zoneAlreadyMissing});
+      deleteTrace("lifecycle.DELETED",{workspaceId,domainId,rootDomain:root,sesAlreadyMissing,zoneAlreadyMissing,sesDeleteFailed,zoneDeleteFailed});
+      await this.audit({...domain,lifecycleState:"DELETED"},"domain.deleted",{rootDomain:root,sesIdentityRemoved:Boolean(domain.providerReference||isRootSenderVersion(domain.provisioningVersion))&&!sesDeleteFailed,hostedZoneRemoved:Boolean(hostedZoneReference)&&!zoneDeleteFailed,sesAlreadyMissing,zoneAlreadyMissing,sesDeleteFailed,zoneDeleteFailed});
       return {ok:true,archived:true,cleanupRecords:(await this.repo.listDnsEvidence(workspaceId,domainId,true)).map(row=>({type:row.recordType,name:row.name,value:row.expectedValue}))};
     }catch(error){const code=errorCode(error);deleteTrace("archive.failed",{workspaceId,domainId,code,message:error instanceof Error?error.message:String(error)});await this.repo.updateProvisioningDomain({workspaceId,domainId,patch:{disconnectStatus:"failed",lifecycleState:isDelegatedEasyDkimVersion(domain.provisioningVersion)?"FAILED":domain.lifecycleState,lastErrorCode:code,lastErrorMessage:error instanceof Error?error.message:code}});throw error}
   }

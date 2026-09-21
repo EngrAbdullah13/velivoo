@@ -10,7 +10,8 @@ import {
   mailFromIdentityReady,
   staticLifecycleState,
 } from "../../../domain/src/phase1/branded-domain.js";
-import { presentCustomerDnsRecord } from "../../../domain/src/phase1/customer-dns-presentation.js";
+import { buildStaticProductionCustomerRecords } from "../../../domain/src/phase1/static-production-customer-dns.js";
+import { staticProductionDnsRecordCount } from "../../../domain/src/phase1/static-branded-dns.js";
 import { normalizeDomain, txtMatches } from "../../../domain/src/phase1/dns.js";
 import {
   generateOwnershipToken,
@@ -26,6 +27,7 @@ import {
   staticDkimCustomerHost,
   staticDmarcAdvisoryRecord,
   staticRootOwnershipRecord,
+  staticProductionDnsPurposes,
   staticSendCustomerHost,
   type StaticDkimSelector,
 } from "../../../domain/src/phase1/static-branded-dns.js";
@@ -182,7 +184,7 @@ export class StaticBrandedProvisioner {
         ownershipVerificationTokenHash: tokenHash,
         ownershipVerificationStatus: "pending",
         dnsStatus: "pending",
-        delegatedSubdomain: infraDomain(root),
+        delegatedSubdomain: staticSendCustomerHost(root, this.cfg.staticSendDnsDomain),
         lastErrorCode: null,
         lastErrorMessage: null,
         ...keyPatch,
@@ -205,14 +207,17 @@ export class StaticBrandedProvisioner {
     });
 
     const sendTarget = staticBrandedSendRoutingHost(routingId, this.cfg.staticSendDnsDomain);
+    const sendHost = staticSendCustomerHost(root, this.cfg.staticSendDnsDomain);
+    if (this.repo.purgeDnsEvidenceExceptName) await this.repo.purgeDnsEvidenceExceptName(domain.workspaceId, domain.id, "send_routing", sendHost);
+    else if (this.repo.retireDnsEvidenceExceptName) await this.repo.retireDnsEvidenceExceptName(domain.workspaceId, domain.id, "send_routing", sendHost);
     await this.repo.upsertDnsEvidence({
       workspaceId: domain.workspaceId,
       senderDomainId: domain.id,
       purpose: "send_routing",
       ownership: "customer",
-      record: { type: "CNAME", name: staticSendCustomerHost(root), values: [sendTarget], ttl: 300 },
+      record: { type: "CNAME", name: sendHost, values: [sendTarget], ttl: 300 },
       verificationStatus: "pending",
-      customerActionRequired: true,
+      customerActionRequired: false,
     });
 
     const keys = this.rotation.readKeys(this.asRecord(domain));
@@ -241,8 +246,8 @@ export class StaticBrandedProvisioner {
       purpose: "dmarc_advisory",
       ownership: "customer",
       record: { type: dmarcAdvisory.type, name: dmarcAdvisory.name, values: dmarcAdvisory.values, ttl: dmarcAdvisory.ttl },
-      verificationStatus: "advisory",
-      customerActionRequired: false,
+      verificationStatus: this.cfg.dmarcRequired ? "pending" : "advisory",
+      customerActionRequired: this.cfg.dmarcRequired,
     });
 
     const mailFromDomain = staticBrandedMailFromDomain(root);
@@ -256,7 +261,7 @@ export class StaticBrandedProvisioner {
       dkimStatus: "PENDING",
       mailFromStatus: "PENDING",
     };
-    let readinessReasons = ["OWNERSHIP_VERIFICATION_PENDING", "STATIC_SEND_ROUTING_PENDING", "STATIC_DKIM_DNS_PENDING", "STATIC_DKIM_VM2_PENDING", "MAIL_FROM_PENDING"];
+    let readinessReasons = ["OWNERSHIP_VERIFICATION_PENDING", "STATIC_DKIM_DNS_PENDING", "STATIC_DKIM_VM2_PENDING", "MAIL_FROM_PENDING"];
     try {
       const privateKey = this.rotation.activePrivateKey(this.asRecord(domain));
       const identity = await this.email!.ensureByodkimIdentity!({
@@ -289,7 +294,7 @@ export class StaticBrandedProvisioner {
         ...identityPatch,
         expectedRecords: [
           { type: ownership.type, host: ownership.name, value: ownership.values[0], required: true },
-          { type: "CNAME", host: staticSendCustomerHost(root), value: sendTarget, required: true },
+          { type: "CNAME", host: staticSendCustomerHost(root, this.cfg.staticSendDnsDomain), value: sendTarget, required: true },
           ...customerRecords.map(record => ({ type: "CNAME", host: record.host, value: record.target, required: true })),
           { type: "MX", host: mailFromRecords[0]!.name, value: mailFromRecords[0]!.values[0], required: true },
           { type: "TXT", host: mailFromRecords[1]!.name, value: mailFromRecords[1]!.values[0], required: true },
@@ -402,7 +407,7 @@ export class StaticBrandedProvisioner {
       domain = await this.repo.createBrandedDomain({
         workspaceId,
         rootDomain,
-        delegatedSubdomain: infraDomain(rootDomain),
+        delegatedSubdomain: staticSendCustomerHost(rootDomain, this.cfg.staticSendDnsDomain),
         region: this.cfg.sesRegion,
         provisioningVersion: V5_STATIC_BRANDED_KLAVIYO,
         provisioningMode: PROVISIONING_MODE_STATIC_BRANDED,
@@ -472,7 +477,9 @@ export class StaticBrandedProvisioner {
         lastCheckedAt: ownershipTxt.checkedAt,
       });
 
-      const sendHost = staticSendCustomerHost(root);
+      const sendHost = staticSendCustomerHost(root, this.cfg.staticSendDnsDomain);
+      if (this.repo.purgeDnsEvidenceExceptName) await this.repo.purgeDnsEvidenceExceptName(workspaceId, domain!.id, "send_routing", sendHost);
+      else if (this.repo.retireDnsEvidenceExceptName) await this.repo.retireDnsEvidenceExceptName(workspaceId, domain!.id, "send_routing", sendHost);
       const sendTarget = staticBrandedSendRoutingHost(routingId, this.cfg.staticSendDnsDomain);
       const sendCname = await this.dns!.checkCname({ name: sendHost, expectedTarget: sendTarget });
       const velivooSend = await this.staticDns!.checkSendRouting({ routingId, target: this.cfg.sendRoutingTarget });
@@ -483,8 +490,8 @@ export class StaticBrandedProvisioner {
         purpose: "send_routing",
         ownership: "customer",
         record: { type: "CNAME", name: sendHost, values: [sendTarget], ttl: 300 },
-        verificationStatus: sendRoutingVerified ? "verified" : sendCname.status === "verified" ? "mismatch" : sendCname.status,
-        customerActionRequired: true,
+        verificationStatus: sendRoutingVerified ? "verified" : verified(sendCname) ? "verifying" : sendCname.status,
+        customerActionRequired: false,
         observedValues: sendCname.observed,
         lastCheckedAt: sendCname.checkedAt,
       });
@@ -529,21 +536,25 @@ export class StaticBrandedProvisioner {
       const dmarc = await this.dns!.resolveTxt(`_dmarc.${root}`);
       const dmarcValue = dmarc.observed.find(validDmarc) ?? null;
       const dmarcAdvisory = staticDmarcAdvisoryRecord(root, this.cfg.dmarcPolicy);
+      const dmarcExpected = dmarcValue ?? dmarcAdvisory.values[0]!;
+      if (this.repo.retireDnsEvidenceExceptExpected) {
+        await this.repo.retireDnsEvidenceExceptExpected(workspaceId, domain!.id, "dmarc_advisory", dmarcAdvisory.name, dmarcExpected);
+      }
       await this.repo.upsertDnsEvidence({
         workspaceId,
         senderDomainId: domain!.id,
         purpose: "dmarc_advisory",
         ownership: "customer",
-        record: { type: dmarcAdvisory.type, name: dmarcAdvisory.name, values: dmarcValue ? [dmarcValue] : dmarcAdvisory.values, ttl: dmarcAdvisory.ttl },
-        verificationStatus: dmarcValue ? "observed" : "advisory",
-        customerActionRequired: false,
+        record: { type: dmarcAdvisory.type, name: dmarcAdvisory.name, values: [dmarcExpected], ttl: dmarcAdvisory.ttl },
+        verificationStatus: dmarcValue ? "verified" : this.cfg.dmarcRequired ? "pending" : "advisory",
+        customerActionRequired: this.cfg.dmarcRequired,
         observedValues: dmarc.observed,
         lastCheckedAt: dmarc.checkedAt,
       });
 
       const sesIdentitySuccess = success(identity.verificationStatus);
       const dkimReady = byodkimIdentityReady(identity, keys.activeSelector) && dkimDnsVerified;
-      const dnsReady = ownershipVerified && sendRoutingVerified && dkimDnsVerified;
+      const dnsReady = ownershipVerified && dkimDnsVerified;
       const mailFromDomain = staticBrandedMailFromDomain(root);
       const mailFromRecords = staticBrandedMailFromRecords(root, this.email!.region);
       await this.upsertMailFromEvidence(workspaceId, domain!, root, mailFromRecords);
@@ -590,7 +601,6 @@ export class StaticBrandedProvisioner {
 
       const reasons: string[] = [];
       if (!ownershipVerified) reasons.push("OWNERSHIP_VERIFICATION_PENDING");
-      if (!sendRoutingVerified) reasons.push("STATIC_SEND_ROUTING_PENDING");
       if (!vm1.dkimDnsVerified) reasons.push("STATIC_DKIM_DNS_PENDING");
       if (!vm2.dkimDnsVerified) reasons.push("STATIC_DKIM_VM2_PENDING");
       if (keys.rotationState === "standby_verifying" || keys.rotationState === "switching") reasons.push("DKIM_ROTATION_PENDING");
@@ -637,7 +647,6 @@ export class StaticBrandedProvisioner {
         ? "READY"
         : staticLifecycleState({
             ownershipVerified,
-            sendRoutingVerified,
             dkimDnsVerified,
             sesIdentitySuccess,
             dkimSuccess: dkimReady,
@@ -661,6 +670,14 @@ export class StaticBrandedProvisioner {
         holdReason: productionReady ? null : routeActive ? "PRODUCTION_GATES_PENDING" : "DOMAIN_NOT_READY",
       });
 
+      if (this.repo.purgeDnsEvidenceDuplicatesForPurposes) {
+        await this.repo.purgeDnsEvidenceDuplicatesForPurposes(
+          workspaceId,
+          domain!.id,
+          [...staticProductionDnsPurposes(this.cfg.dmarcRequired)],
+        );
+      }
+
       domain = await this.repo.updateProvisioningDomain({
         workspaceId,
         domainId: domain!.id,
@@ -681,7 +698,7 @@ export class StaticBrandedProvisioner {
           ownershipVerifiedAt: ownershipVerified ? new Date() : null,
           dnsStatus: routeActive ? "verified" : dnsReady ? "verifying" : "waiting_for_dns",
           trackingDomain: trackingHostname ?? null,
-          dmarcStatus: dmarcValue ? "verified" : "warning",
+          dmarcStatus: dmarcValue ? "verified" : this.cfg.dmarcRequired ? "pending" : "warning",
           dmarcObservation: {
             status: dmarcValue ? "observed" : dmarc.status,
             value: dmarcValue,
@@ -691,6 +708,7 @@ export class StaticBrandedProvisioner {
             dkimAlignment: "byodkim",
             spfAlignment: mailFromReady ? "mail_from" : "default",
           },
+          delegatedSubdomain: staticSendCustomerHost(root, this.cfg.staticSendDnsDomain),
           lastCheckedAt: new Date(),
           verifiedAt: routeActive ? new Date() : null,
           lastErrorCode: null,
@@ -770,31 +788,31 @@ export class StaticBrandedProvisioner {
   }
 
   async enrichCustomerView(domain: ProvisioningDomain, base: ReturnType<StaticBrandedProvisioner["customerView"]>) {
-    const records = await this.repo.listDnsEvidence(domain.workspaceId, domain.id, true);
+    const root = domain.rootDomain ?? domain.domain;
+    const records = await this.repo.listDnsEvidence(domain.workspaceId, domain.id, false);
+    const productionEvidence = records.filter(
+      (record) =>
+        (staticProductionDnsPurposes(this.cfg.dmarcRequired) as readonly string[]).includes(record.purpose) &&
+        !customerDnsUsesProviderBranding({ name: record.name, value: record.expectedValue, purpose: record.purpose }),
+    );
+    const customerRecords = buildStaticProductionCustomerRecords({
+      rootDomain: root,
+      dmarcRequired: this.cfg.dmarcRequired,
+      evidence: productionEvidence.map((record) => ({
+        purpose: record.purpose,
+        recordType: record.recordType,
+        name: record.name,
+        expectedValue: record.expectedValue,
+        verificationStatus: record.verificationStatus,
+        observedValues: record.observedValues,
+        lastCheckedAt: record.lastCheckedAt,
+      })),
+    });
     return {
       ...base,
-      customerRecords: records
-        .filter(record => record.customerActionRequired !== false && record.purpose !== "dmarc_advisory" && !customerDnsUsesProviderBranding({ name: record.name, value: record.expectedValue, purpose: record.purpose }))
-        .map(record => {
-          const root = domain.rootDomain ?? domain.domain;
-          return {
-            type: record.recordType,
-            name: record.name,
-            value: record.expectedValue,
-            purpose: record.purpose,
-            status: record.verificationStatus,
-            observedValues: record.observedValues,
-            lastCheckedAt: record.lastCheckedAt,
-            presentation: presentCustomerDnsRecord({
-              type: record.recordType,
-              name: record.name,
-              value: record.expectedValue,
-              purpose: record.purpose,
-              rootDomain: root,
-            }),
-          };
-        }),
-      dmarcAdvisory: records.find(record => record.purpose === "dmarc_advisory") ?? null,
+      productionDnsRecordCount: staticProductionDnsRecordCount(this.cfg.dmarcRequired),
+      customerRecords,
+      dmarcAdvisory: productionEvidence.find((record) => record.purpose === "dmarc_advisory") ?? null,
     };
   }
 

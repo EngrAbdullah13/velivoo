@@ -12,3 +12,5 @@ tmp/
 work/
 .DS_Store
 coverage/
+*.tsbuildinfo
+scripts/diag-output.json
