@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { phaseFor, phasePorts } from "../apps/api/src/gateway-routing.js";
+import { phaseFor, phasePorts } from "../backend/api/src/gateway-routing.js";
 
 const workspace = "11111111-1111-4111-8111-111111111111";
 const analytics = `/api/v1/workspaces/${workspace}/analytics`;

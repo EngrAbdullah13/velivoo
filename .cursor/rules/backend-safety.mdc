@@ -1,6 +1,6 @@
 ---
 description: Tenant, delivery, persistence and queue safety
-globs: apps/api/**,apps/public-api/**,apps/worker/**,apps/scheduler/**,packages/application/**,packages/persistence/**,packages/queue/**
+globs: backend/api/**,backend/public-api/**,backend/worker/**,backend/scheduler/**,packages/application/**,packages/persistence/**,packages/queue/**
 alwaysApply: false
 ---
 
@@ -12,4 +12,3 @@ Use exclusive claims/ownership for external submissions and scheduled work. Inte
 Use valid stable BullMQ IDs and test actual PG/Redis concurrency. Keep action types partitioned between workers.
 Inspect SQL constraints as well as Prisma schema before migrations. Preserve unrelated changes and historical data.
 Fail closed for production secret/config gaps; customer-safe errors with server-side correlation.
-

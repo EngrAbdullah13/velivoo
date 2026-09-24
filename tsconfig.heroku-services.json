@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noCheck": true
+  },
+  "include": [
+    "backend/public-api/src/real-server.ts",
+    "backend/worker/src/branded-domain-verification-worker.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
+}

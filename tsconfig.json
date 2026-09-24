@@ -35,17 +35,17 @@
     "packages/observability/src/**/*.ts",
     "packages/config/src/**/*.ts",
     "packages/testkit/src/**/*.ts",
-    "apps/api/src/**/*.ts",
-    "apps/public-api/src/**/*.ts",
-    "apps/worker/src/**/*.ts",
-    "apps/scheduler/src/**/*.ts",
+    "backend/api/src/**/*.ts",
+    "backend/public-api/src/**/*.ts",
+    "backend/worker/src/**/*.ts",
+    "backend/scheduler/src/**/*.ts",
     "tests/*.test.ts",
     "tests/integration/*.test.ts"
   ],
   "exclude": [
     "dist",
     "node_modules",
-    "apps/**/real-*.ts",
+    "backend/**/real-*.ts",
     "packages/persistence/src/prisma/**/*",
     "packages/queue/src/bullmq/**/*",
     "packages/provider-email/src/ses/ses-provider.ts"

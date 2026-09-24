@@ -2,7 +2,7 @@
 //
 // These run against the RUNNING gateway (default 127.0.0.1:4000) and a real
 // PostgreSQL database, not in-memory repositories. The gateway is the correct
-// target because ordered-regex route selection in apps/api/src/app-server.ts
+// target because ordered-regex route selection in backend/api/src/app-server.ts
 // decides which child API actually serves a path; testing a child port
 // directly can pass while the same request 404s or reaches a different module
 // through port 4000.

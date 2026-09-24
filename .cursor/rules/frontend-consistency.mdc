@@ -1,14 +1,13 @@
 ---
 description: Preserve Velivoo branding, Profiles typography and shell behavior
-globs: apps/web/**
+globs: frontend/**
 alwaysApply: false
 ---
 
-Read apps/web/AGENTS.md and its required local Next documentation before frontend code changes.
+Read frontend/AGENTS.md and its required local Next documentation before frontend code changes.
 Preserve Velivoo full/compact brand assets and Profiles-based resolved Arial typography/type scale. Check the final CSS cascade, not earlier overridden styles.
 Keep standard pages full-width white and preserve existing purple/lime accents and rounded neutral cards.
 Collapsed navigation stays collapsed on page clicks; only explicit logo/menu opener changes sidebar mode. Preserve hover labels and accessible controls.
 Keep flow inspector in its palette area and canvas/scroll containment stable. Do not redesign UI during backend repairs.
 Reuse shared authenticated API helpers; verify gateway methods/routes. Show errors and clear forms/close confirmations only after successful actions.
 Do not expose server env or AWS credentials in NEXT_PUBLIC variables.
-

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyticsRecipients, analyticsRecipientsExport } from "../apps/api/src/analytics-dashboard.js";
-import { analyticsRecipientsCsv } from "../apps/api/src/analytics-recipient-csv.js";
+import { analyticsRecipients, analyticsRecipientsExport } from "../backend/api/src/analytics-dashboard.js";
+import { analyticsRecipientsCsv } from "../backend/api/src/analytics-recipient-csv.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";

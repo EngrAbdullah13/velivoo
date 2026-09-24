@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { deliverabilityDashboard } from "../apps/api/src/deliverability-dashboard.ts";
+import { deliverabilityDashboard } from "../backend/api/src/deliverability-dashboard.ts";
 import { loadEmailPlatformConfig } from "../packages/config/src/env.js";
 
 const workspaceId = process.argv[2] ?? "87a5ebc0-ac21-4c02-b32b-d5eb9f0a882b";

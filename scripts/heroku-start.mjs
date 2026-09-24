@@ -7,17 +7,20 @@ import { dirname, join, resolve } from "node:path";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const webPort = Number(process.env.PORT);
 const internalApiPort = 4100;
-const apiEntry = join(root, "dist", "apps", "api", "src", "app-server.js");
+const internalPublicApiPort = 4105;
+const apiEntry = join(root, "dist", "backend", "api", "src", "app-server.js");
+const publicApiEntry = join(root, "dist", "backend", "public-api", "src", "real-server.js");
+const domainVerificationWorker = join(root, "dist", "backend", "worker", "src", "branded-domain-verification-worker.js");
 const nextCli = join(root, "node_modules", "next", "dist", "bin", "next");
 
 if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
   throw new Error("Heroku must provide a valid PORT for the web server.");
 }
-if (webPort === internalApiPort) {
-  throw new Error("PORT conflicts with EMAIL_PLATFORM_INTERNAL_API_PORT; configure a different internal API port.");
+if ([internalApiPort, internalPublicApiPort].includes(webPort)) {
+  throw new Error("PORT conflicts with a private application service port; restart with a different PORT.");
 }
-if (!existsSync(apiEntry) || !existsSync(nextCli)) {
-  throw new Error("Production build is incomplete. Run the Heroku build so the API and Next.js app are compiled.");
+if (![apiEntry, publicApiEntry, domainVerificationWorker, nextCli].every(existsSync)) {
+  throw new Error("Production build is incomplete. Run the Heroku build so the web, API, public callback, and domain worker are compiled.");
 }
 
 async function findAvailablePort(startAt, reserved) {
@@ -33,7 +36,7 @@ async function findAvailablePort(startAt, reserved) {
   throw new Error("Could not allocate a private port for an API service.");
 }
 
-const reserved = new Set([webPort, internalApiPort]);
+const reserved = new Set([webPort, internalApiPort, internalPublicApiPort]);
 const phasePorts = [];
 for (let index = 0; index < 4; index += 1) {
   const port = await findAvailablePort(4110 + index, reserved);
@@ -46,6 +49,8 @@ const env = {
   NODE_ENV: "production",
   EMAIL_PLATFORM_API_PORT: String(internalApiPort),
   EMAIL_PLATFORM_INTERNAL_API_URL: `http://127.0.0.1:${internalApiPort}`,
+  EMAIL_PLATFORM_PUBLIC_API_PORT: String(internalPublicApiPort),
+  EMAIL_PLATFORM_PUBLIC_API_INTERNAL_URL: `http://127.0.0.1:${internalPublicApiPort}`,
   EMAIL_PLATFORM_PHASE1_API_PORT: String(phasePorts[0]),
   EMAIL_PLATFORM_PHASE2_API_PORT: String(phasePorts[1]),
   EMAIL_PLATFORM_PHASE3_API_PORT: String(phasePorts[2]),
@@ -86,6 +91,8 @@ function launch(name, command, args) {
 }
 
 launch("API gateway", process.execPath, [apiEntry]);
-launch("Next.js", process.execPath, [nextCli, "start", join(root, "apps", "web"), "--hostname", "0.0.0.0", "--port", String(webPort)]);
+launch("Public feedback/tracking/unsubscribe API", process.execPath, [publicApiEntry]);
+launch("Domain verification worker", process.execPath, [domainVerificationWorker]);
+launch("Next.js", process.execPath, [nextCli, "start", join(root, "frontend"), "--hostname", "0.0.0.0", "--port", String(webPort)]);
 
 for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => stop(0));

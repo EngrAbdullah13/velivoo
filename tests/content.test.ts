@@ -4,7 +4,7 @@ import { Phase2ContentService } from "../packages/application/src/phase2/content
 import { ensureComplianceFooter, validateStructuredDocument, type EmailDraft, type StructuredEmailDocument } from "../packages/domain/src/phase2/content.js";
 import { runPreflight } from "../packages/domain/src/phase2/preflight.js";
 import { compileStructuredDraft, resolveTemplate } from "../packages/email-renderer/src/phase2-structured.js";
-import { buildImportedHtmlDocument } from "../apps/web/src/lib/template-document-utils.js";
+import { buildImportedHtmlDocument } from "../frontend/src/lib/template-document-utils.js";
 
 const actor={userId:"owner",workspaceId:"ws1"};
 const ctx={senderDomainReady:true,workspaceBusinessAddress:"1 Street",allowHtmlMode:false};
