@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { validateSegmentRule, type SegmentRule } from './segment-rules.js';
+import { collectRuleLeaves, validateSegmentRule, type SegmentRule } from './segment-rules.js';
 export type ListEnrollmentMode='future_only'|'existing_and_future';
 export type FlowTrigger=
  |{type:'unconfigured'}|{type:'list_joined';listId:string;enrollmentMode?:ListEnrollmentMode}|{type:'segment_entered';segmentId:string}|{type:'profile_date';field:string;hour:number;minute:number;timezonePolicy:'profile_then_workspace'}|{type:'generic_event';eventName:string;schemaVersion:number}|{type:'manual_test'};
@@ -53,5 +53,30 @@ export function validateFlow3(g:FlowGraph3):FlowIssue3[]{
  const ids=new Set<string>();for(const n of g.nodes??[]){if(!n?.id?.trim())issues.push(issue('NODE_ID_REQUIRED','nodes','Every node needs an ID.'));else if(ids.has(n.id))issues.push(issue('DUPLICATE_NODE',`nodes.${n.id}`,'Node IDs must be unique.',n.id));ids.add(n.id);if(n.type==='delay'&&(!Number.isInteger(n.durationSeconds)||n.durationSeconds<0||n.durationSeconds>31536000))issues.push(issue('DELAY_INVALID',`nodes.${n.id}`,'Delay is out of bounds.',n.id,'durationSeconds'));if(n.type==='wait_until'&&(n.hour<0||n.hour>23||n.minute<0||n.minute>59||n.timezonePolicy!=='profile_then_workspace'))issues.push(issue('WAIT_TIME_INVALID',`nodes.${n.id}`,'Wait-until configuration is invalid.',n.id));if(n.type==='conditional')issues.push(...ruleIssues('CONDITIONAL_RULE',n.rule,`nodes.${n.id}.rule`,n.id));if(n.type==='email'&&(!n.emailVersionId||(n.mode&&!['test','live'].includes(n.mode))))issues.push(issue('EMAIL_VERSION_REQUIRED',`nodes.${n.id}`,'Email nodes require a published version and mode.',n.id,'emailVersionId'));if(!['delay','wait_until','conditional','email','end'].includes((n as any).type))issues.push(issue('NODE_TYPE_UNSUPPORTED',`nodes.${n.id}`,'This node type is not supported in Release 1.',n.id))}
  const out=new Map<string,FlowEdge3[]>();for(const e of g.edges??[]){if(e.from!=='trigger'&&!ids.has(e.from))issues.push(issue('DANGLING_EDGE','edges',`Unknown source ${e.from}.`));if(!ids.has(e.to))issues.push(issue('DANGLING_EDGE','edges',`Unknown target ${e.to}.`));out.set(e.from,[...(out.get(e.from)??[]),e])}
  if((out.get('trigger')??[]).length!==1)issues.push(issue('TRIGGER_OUTGOING','edges','Trigger must have exactly one outgoing edge.'));for(const n of g.nodes??[]){const es=out.get(n.id)??[];if(n.type==='end'&&es.length)issues.push(issue('END_OUTGOING',`nodes.${n.id}`,'End node cannot have outgoing edges.',n.id));else if(n.type==='conditional'){const labels=new Set(es.map(e=>e.outcome));if(es.length!==2||!labels.has('yes')||!labels.has('no'))issues.push(issue('CONDITIONAL_BRANCHES',`nodes.${n.id}`,'Conditional node requires exactly Yes and No branches.',n.id));else if(es[0]?.to===es[1]?.to)issues.push(issue('CONDITIONAL_BRANCH_TARGETS',`nodes.${n.id}`,'Yes and No must start on distinct branch nodes.',n.id))}else if(n.type!=='end'&&es.length!==1)issues.push(issue('OUTGOING_COUNT',`nodes.${n.id}`,'Node requires exactly one outgoing edge.',n.id))}
+ const nodesById=new Map((g.nodes??[]).map(node=>[node.id,node] as const));
+ for(const node of g.nodes??[]){
+  if(node.type!=='conditional')continue;
+  const checksEngagement=collectRuleLeaves(node.rule).some(rule=>rule.type==='email_activity'&&(rule.event==='opened'||rule.event==='clicked'));
+  if(!checksEngagement)continue;
+  const predecessors=(g.edges??[]).filter(edge=>edge.to===node.id).map(edge=>edge.from==='trigger'?undefined:nodesById.get(edge.from));
+  if(!predecessors.length||predecessors.some(predecessor=>predecessor?.type!=='delay'&&predecessor?.type!=='wait_until'))issues.push({
+   code:'ENGAGEMENT_WAIT_REQUIRED',severity:'blocking',path:`nodes.${node.id}`,nodeId:node.id,field:'rule',
+   message:'Add a Time delay or Wait until step immediately before this engagement split. Each recipient must have time to open or click before their own condition is evaluated.',
+   suggestedAction:'Insert a timing step before this split, then publish a new Flow version.'
+  });
+ }
  const adj=(id:string)=>(out.get(id)??[]).map(e=>e.to),seen=new Set<string>(),active=new Set<string>();const visit=(id:string)=>{if(active.has(id)){issues.push(issue('CYCLE',`nodes.${id}`,'Cycles are not supported in Release 1.',id));return}if(seen.has(id))return;seen.add(id);active.add(id);for(const n of adj(id))visit(n);active.delete(id)};visit('trigger');for(const id of ids)if(!seen.has(id))issues.push(issue('UNREACHABLE',`nodes.${id}`,'Node is unreachable from trigger.',id));if(![...ids].some(id=>(g.nodes??[]).find(n=>n.id===id)?.type==='end'))issues.push(issue('TERMINAL_REQUIRED','nodes','Flow requires an End node.'));for(const rule of g.entryFilters??[])issues.push(...ruleIssues('ENTRY_FILTER',rule,'entryFilters'));for(const rule of g.exitRules??[])issues.push(...ruleIssues('EXIT_RULE',rule,'exitRules'));if(g.entryPolicy?.mode==='cooldown'&&(!g.entryPolicy.cooldownSeconds||g.entryPolicy.cooldownSeconds<60||g.entryPolicy.cooldownSeconds>31536000))issues.push(issue('COOLDOWN_INVALID','entryPolicy','Cooldown requires a duration between one minute and one year.'));if(!g.entryPolicy||!['once','once_per_event','cooldown'].includes(g.entryPolicy.mode))issues.push(issue('ENTRY_POLICY_INVALID','entryPolicy','Select a supported re-entry policy.'));return issues}
 export function flowGraphHash(g:FlowGraph3){return createHash('sha256').update(JSON.stringify(g)).digest('hex')}
+
+/**
+ * A saved draft is not the configuration used by running automations until it
+ * has been published and activated. Keep this comparison in the domain so API
+ * and UI projections cannot accidentally present a changed draft as live.
+ */
+export function flowHasUnpublishedChanges(draft:FlowGraph3,activeGraphHash?:string|null,activeGraph?:FlowGraph3|null){
+ if(!activeGraphHash)return true;
+ // Canvas placement is editor-only state. It must not make an unchanged live
+ // automation look as though it needs a new published version.
+ if(activeGraph)return flowGraphHash({...draft,layout:undefined})!==flowGraphHash({...activeGraph,layout:undefined});
+ return flowGraphHash(draft)!==activeGraphHash
+}

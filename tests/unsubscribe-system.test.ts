@@ -58,7 +58,7 @@ async function phase2Setup(consent = "granted") {
   const repo = new InMemoryPhase2Repository();
   repo.seedWorkspace({ id: WS, businessAddress: "123 Test Street", timezone: "UTC", legalName: "ABC Store" }, USER, "owner");
   repo.seedProfile({ id: PROFILE_A, workspaceId: WS, normalizedEmail: "john@gmail.com", originalEmail: "john@gmail.com", firstName: "John", timezone: "UTC" }, consent);
-  repo.seedSender({ id: DOMAIN, workspaceId: WS, domain: "brand.test", status: "verified" }, { id: SENDER, workspaceId: WS, domainId: DOMAIN, fromName: "ABC Store", fromEmail: "hello@brand.test", replyTo: "support@brand.test", status: "active" });
+  repo.seedSender({ id: DOMAIN, workspaceId: WS, domain: "brand.test", status: "verified" }, { id: SENDER, workspaceId: WS, domainId: DOMAIN, fromName: "ABC Store", fromEmail: "hello@brand.test", replyTo: "support@brand.test", purpose: "marketing", status: "active" });
   const objects = new LocalObjectStore(root);
   const provider = new FakeEmailProvider();
   const service = new Phase2Service(repo, objects, provider, { publicBaseUrl: "https://click.brand.test", unsubscribeSecret: SECRET, trackingSecret: "t".repeat(32), maxMessageBytes: 500_000, providerReady: true });

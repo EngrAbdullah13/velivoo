@@ -1,1 +1,3 @@
-export async function phase4Api(path:string,init?:RequestInit){const base=process.env.NEXT_PUBLIC_PHASE4_API_BASE_URL??process.env.NEXT_PUBLIC_EMAIL_PLATFORM_API_URL??'http://localhost:4000';const r=await fetch(`${base}${path}`,{...init,credentials:'include',headers:{'content-type':'application/json','x-dev-user':process.env.NEXT_PUBLIC_DEV_USER??'dev-owner',...(init?.headers??{})},cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error(data.error?.message??data.error??`HTTP_${r.status}`);return data}
+import { apiBaseUrl } from "./api-url";
+
+export async function phase4Api(path:string,init?:RequestInit){const base=apiBaseUrl();const r=await fetch(`${base}${path}`,{...init,credentials:'include',headers:{'content-type':'application/json','x-dev-user':process.env.NEXT_PUBLIC_DEV_USER??'dev-owner',...(init?.headers??{})},cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error(data.error?.message??data.error??`HTTP_${r.status}`);return data}

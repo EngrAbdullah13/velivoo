@@ -5,7 +5,7 @@ import {useCallback,useEffect,useState} from "react";
 import {phase1Api} from "../lib/phase1-api";
 
 const names=["Upload","Map fields","Choose rules","Validate","Commit","Results"];
-const apiBase=process.env.NEXT_PUBLIC_EMAIL_PLATFORM_API_URL??"http://localhost:4000";
+const apiBase="";
 
 export function ImportManager({workspaceId,importId,targetListId}:{workspaceId:string;
 importId?:string;targetListId?:string}){const [jobs,setJobs]=useState<any[]>([]),[job,setJob]=useState<any>(null),[preview,setPreview]=useState<any>(null),[lists,setLists]=useState<any[]>([]),[file,setFile]=useState<File|null>(null),[mapping,setMapping]=useState<any>({email:"",firstName:"",lastName:"",properties:{}}),[policy,setPolicy]=useState<any>({source:"csv import",upsert:true,blankPolicy:"ignore",destinationListId:targetListId??"",consentEnabled:false,consentSource:"",evidenceNote:""}),[stage,setStage]=useState(0),[error,setError]=useState(""),[busy,setBusy]=useState(false),[ledger,setLedger]=useState<any[]|null>(null);

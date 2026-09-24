@@ -2,6 +2,7 @@ import type { DomainLifecycleState, DomainReadinessStatus } from "../../../domai
 import type { ManagedDnsRecord } from "./dns-provider.js";
 export interface ProvisioningDomain {
   id:string;workspaceId:string;domain:string;rootDomain?:string|null;delegatedSubdomain?:string|null;provisioningMode:string;
+  sendingPurpose?:"marketing"|"transactional"|null;
   provisioningVersion?:string|null;provisioningCallerReference?:string|null;dkimTokens?:unknown;dkimSigningHostedZone?:string|null;
   ownershipVerificationToken?:string|null;dkimSigningMode?:string|null;dkimSigningDomain?:string|null;dkimSelector?:string|null;
   delegationStatus?:string|null;soaStatus?:string|null;verificationStatus?:string|null;dmarcObservation?:unknown;

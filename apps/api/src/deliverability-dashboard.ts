@@ -161,7 +161,7 @@ export async function deliverabilityDashboard(input: {
   const staticDkimVerified=(domainId:string)=>customerVerified(domainId,"dkim_vm1")&&customerVerified(domainId,"dkim_vm2");
   const simpleState=(ok:boolean)=>ok?"ready":"pending";
   const customerDomains=domains.map((domain:any)=>{
-    if(domain.provisioningMode!=="branded_delegation"&&domain.provisioningMode!=="static_branded")return {id:domain.id,domain:domain.domain,rootDomain:domain.domain,sendingDomain:domain.domain,provisioningMode:"legacy_ses_records",provisioningVersion:domain.provisioningVersion??"V1_LEGACY_SEND_SUBDOMAIN",lifecycleState:domain.status==="verified"?"ready":"authentication_verifying",authenticationStatus:domain.status,readinessStatus:domain.status==="verified"?"ready":"not_ready",readinessReasons:domain.status==="verified"?[]:["LEGACY_AUTHENTICATION_PENDING"],lastCheckedAt:domain.lastCheckedAt,verifiedAt:domain.verifiedAt,customerRecords:[],readinessChecks:[{key:"authentication",label:"Authentication",status:domain.status==="verified"?"ready":"pending"}]};
+    if(domain.provisioningMode!=="branded_delegation"&&domain.provisioningMode!=="static_branded")return {id:domain.id,domain:domain.domain,rootDomain:domain.domain,sendingDomain:domain.domain,sendingPurpose:domain.sendingPurpose??null,provisioningMode:"legacy_ses_records",provisioningVersion:domain.provisioningVersion??"V1_LEGACY_SEND_SUBDOMAIN",lifecycleState:domain.status==="verified"?"ready":"authentication_verifying",authenticationStatus:domain.status,readinessStatus:domain.status==="verified"?"ready":"not_ready",readinessReasons:domain.status==="verified"?[]:["LEGACY_AUTHENTICATION_PENDING"],lastCheckedAt:domain.lastCheckedAt,verifiedAt:domain.verifiedAt,customerRecords:[],readinessChecks:[{key:"authentication",label:"Authentication",status:domain.status==="verified"?"ready":"pending"},{key:"sending_purpose",label:"Email use case",status:domain.sendingPurpose?"ready":"pending"}]};
     const isV3=domain.provisioningVersion==="V3_ROOT_SENDER_DELEGATED_EASY_DKIM"||domain.provisioningVersion==="V3_ROOT_SENDER_PLATFORM_DKIM";
     const isStatic=domain.provisioningMode==="static_branded"||domain.provisioningVersion==="V4_STATIC_BRANDED_BYODKIM"||domain.provisioningVersion==="V5_STATIC_BRANDED_KLAVIYO";
     const ownershipVerified=isStatic?customerVerified(domain.id,"ownership"):allVerified(domain.id,"ownership");
@@ -184,6 +184,7 @@ export async function deliverabilityDashboard(input: {
       id:domain.id,
       domain:domain.rootDomain??domain.domain,
       rootDomain:domain.rootDomain??domain.domain,
+      sendingPurpose:domain.sendingPurpose??null,
       infraDomain:domain.delegatedSubdomain,
       sendingDomain:domain.rootDomain??domain.domain,
       mailFromDomain:domain.mailFromDomain,
@@ -221,6 +222,7 @@ export async function deliverabilityDashboard(input: {
         };
       }),
       readinessChecks:[
+        {key:"sending_purpose",label:"Email use case",status:domain.sendingPurpose?"ready":"pending"},
         ...(isStatic?[]:[{key:"nameservers",label:"Nameservers",status:simpleState(domain.delegationStatus==="verified"||allVerified(domain.id,"delegation"))},{key:"soa",label:"Authoritative SOA",status:simpleState(domain.soaStatus==="verified")}]),
         {key:"ownership",label:"Ownership verification",status:simpleState(isStatic?customerVerified(domain.id,"ownership"):allVerified(domain.id,"ownership"))},
         ...(isStatic?[{key:"send_routing",label:"Branded link tracking (optional)",status:customerVerified(domain.id,"send_routing")?"ready":"warning"}]:[]),

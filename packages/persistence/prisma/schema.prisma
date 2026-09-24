@@ -98,6 +98,7 @@ model SenderDomain {
   workspaceId       String   @map("workspace_id") @db.Uuid
   workspacePrimary  Boolean  @default(false) @map("workspace_primary")
   domain             String
+  sendingPurpose     String?  @map("sending_purpose")
   status             String
   expectedRecords    Json?    @map("expected_records_json") @db.JsonB
   observedRecords    Json?    @map("observed_records_json") @db.JsonB
@@ -684,12 +685,16 @@ model Message {
   renderedHash    String?  @map("rendered_hash")
   scheduledFor    DateTime @map("scheduled_for") @db.Timestamptz(6)
   renderedAt      DateTime? @map("rendered_at") @db.Timestamptz(6)
-  submittedAt     DateTime? @map("submitted_at") @db.Timestamptz(6)
-  finalAt         DateTime? @map("final_at") @db.Timestamptz(6)
+    submittedAt     DateTime? @map("submitted_at") @db.Timestamptz(6)
+    finalAt         DateTime? @map("final_at") @db.Timestamptz(6)
+    firstOpenedAt   DateTime? @map("first_opened_at") @db.Timestamptz(6)
+    lastOpenedAt    DateTime? @map("last_opened_at") @db.Timestamptz(6)
+    openCount       Int       @default(0) @map("open_count")
   @@unique([workspaceId, idempotencyKey])
   @@index([workspaceId, profileId, createdAt])
   @@index([workspaceId, sourceType, submittedAt])
-  @@index([workspaceId, sourceType, createdAt])
+    @@index([workspaceId, sourceType, createdAt])
+    @@index([workspaceId, sourceType, sourceId, firstOpenedAt])
   @@index([workspaceId, emailVersionId])
   @@index([workspaceId, emailTestSnapshotId])
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

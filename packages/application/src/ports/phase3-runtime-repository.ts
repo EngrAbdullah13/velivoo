@@ -62,5 +62,5 @@ export interface Phase2FlowMessagePort {
 }
 
 export interface FlowRuleEvaluationPort {
-  evaluate(input:{workspaceId:string;profileId:string;rule:unknown;at:Date}):Promise<{result:boolean;evidence:Record<string,unknown>}>;
+  evaluate(input:{workspaceId:string;profileId:string;flowRunId?:string;rule:unknown;at:Date}):Promise<{result:boolean;evidence:Record<string,unknown>}>;
 }

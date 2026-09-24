@@ -49,20 +49,46 @@ function layoutGraph(graph: Graph) {
   for (const node of graph.nodes) if (!result.has(node.id)) result.set(node.id, { x: column++ * 310 + 600, y: 260 });
   return result;
 }
-export function FlowCanvas({ graph, options, issues, selected, onSelect, onInsert, zoom, readOnly }: { graph: Graph; options: BuilderOptions | null; issues: Issue[]; selected: string; onSelect: (id: string) => void; onInsert: (edge: Connection) => void; zoom: number; readOnly: boolean }) {
+export function FlowCanvas({ graph, options, issues, selected, onSelect, onInsert, onMove, zoom, readOnly }: { graph: Graph; options: BuilderOptions | null; issues: Issue[]; selected: string; onSelect: (id: string) => void; onInsert: (edge: Connection) => void; onMove: (id: string, position: Position) => void; zoom: number; readOnly: boolean }) {
   const positions = useMemo(() => layoutGraph(graph), [graph]);
-  const [manualPositions, setManualPositions] = useState<Record<string, Position>>({});
   const [dragging, setDragging] = useState<{ id: string; position: Position } | null>(null);
-  const drag = useRef<{ id: string; start: Position; origin: Position; moved: boolean } | null>(null);
-  const width = Math.max(1000, ...[...positions.values()].map(p => p.x + 320));
-  const height = Math.max(600, ...[...positions.values()].map(p => p.y + 180));
-  const begin = (event: PointerEvent<HTMLButtonElement>, id: string, position: Position) => { if (readOnly || event.button !== 0) return; event.currentTarget.setPointerCapture(event.pointerId); drag.current = { id, start: { x: event.clientX, y: event.clientY }, origin: position, moved: false }; };
-  const move = (event: PointerEvent<HTMLButtonElement>) => { const current = drag.current; if (!current) return; const dx = (event.clientX - current.start.x) / (zoom / 100), dy = (event.clientY - current.start.y) / (zoom / 100); if (Math.abs(dx) + Math.abs(dy) > 5) current.moved = true; if (current.moved) setDragging({ id: current.id, position: { x: Math.max(16, current.origin.x + dx), y: Math.max(16, current.origin.y + dy) } }); };
-  const finish = () => { if (dragging && drag.current?.moved) setManualPositions(current => ({ ...current, [dragging.id]: dragging.position })); setDragging(null); drag.current = null; };
-  const position = (id: string) => dragging?.id === id ? dragging.position : manualPositions[id] ?? positions.get(id);
-  return <div className={s.canvasScroll} aria-label="Flow canvas"><div className={s.scaledCanvas} style={{ width: width * zoom / 100, height: height * zoom / 100 }}><div className={s.canvasStage} style={{ width, height, transform: `scale(${zoom / 100})` }}>
+  const [panning, setPanning] = useState(false);
+  const drag = useRef<{ id: string; start: Position; origin: Position; position: Position; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const pan = useRef<{ pointerId: number; start: Position; scrollLeft: number; scrollTop: number } | null>(null);
+  const displayedPositions = [...positions].map(([id, position]) => dragging?.id === id ? dragging.position : graph.layout?.[id] ?? position);
+  const width = Math.max(1000, ...displayedPositions.map(position => position.x + 320));
+  const height = Math.max(600, ...displayedPositions.map(position => position.y + 180));
+  const begin = (event: PointerEvent<HTMLButtonElement>, id: string, position: Position) => { if (readOnly || event.button !== 0) return; suppressClick.current = false; event.currentTarget.setPointerCapture(event.pointerId); drag.current = { id, start: { x: event.clientX, y: event.clientY }, origin: position, position, moved: false }; };
+  const move = (event: PointerEvent<HTMLButtonElement>) => { const current = drag.current; if (!current) return; const dx = (event.clientX - current.start.x) / (zoom / 100), dy = (event.clientY - current.start.y) / (zoom / 100); if (Math.abs(dx) + Math.abs(dy) > 5) current.moved = true; if (current.moved) { current.position = { x: Math.max(16, Math.round(current.origin.x + dx)), y: Math.max(16, Math.round(current.origin.y + dy)) }; setDragging({ id: current.id, position: current.position }); } };
+  const finish = () => { const current = drag.current; if (current?.moved) { suppressClick.current = true; onMove(current.id, current.position); } setDragging(null); drag.current = null; };
+  const beginPan = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || (event.target as Element).closest('button, input, select, textarea, a')) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const scrollbarWidth = event.currentTarget.offsetWidth - event.currentTarget.clientWidth;
+    const scrollbarHeight = event.currentTarget.offsetHeight - event.currentTarget.clientHeight;
+    if ((scrollbarWidth > 0 && event.clientX >= bounds.right - scrollbarWidth) || (scrollbarHeight > 0 && event.clientY >= bounds.bottom - scrollbarHeight)) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pan.current = { pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, scrollLeft: event.currentTarget.scrollLeft, scrollTop: event.currentTarget.scrollTop };
+    setPanning(true);
+  };
+  const movePan = (event: PointerEvent<HTMLDivElement>) => {
+    const current = pan.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.currentTarget.scrollLeft = current.scrollLeft - (event.clientX - current.start.x);
+    event.currentTarget.scrollTop = current.scrollTop - (event.clientY - current.start.y);
+  };
+  const finishPan = (event: PointerEvent<HTMLDivElement>) => {
+    if (pan.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    pan.current = null;
+    setPanning(false);
+  };
+  const position = (id: string) => dragging?.id === id ? dragging.position : graph.layout?.[id] ?? positions.get(id);
+  return <div className={s.canvasScroll} data-panning={panning} aria-label="Flow canvas" onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={finishPan} onPointerCancel={finishPan}><div className={s.scaledCanvas} style={{ width: width * zoom / 100, height: height * zoom / 100 }}><div className={s.canvasStage} style={{ width, height, transform: `scale(${zoom / 100})` }}>
     <svg className={s.connections} width={width} height={height} aria-hidden="true">{graph.edges.map((edge, index) => { const from = position(edge.from), to = position(edge.to); if (!from || !to) return null; const x1 = from.x + 124, y1 = from.y + 124, x2 = to.x + 124, y2 = to.y; return <g key={index}><path d={`M${x1} ${y1} V${y1 + 38} H${x2} V${y2}`}/>{edge.outcome && <text x={x2 + 12} y={y1 + 64} data-outcome={edge.outcome}>{edge.outcome.toUpperCase()}</text>}</g>; })}</svg>
     {graph.edges.map((edge, index) => { const from = position(edge.from), to = position(edge.to); if (!from || !to) return null; return <button key={`add-${index}`} className={s.insertStep} style={{ left: to.x + 109, top: to.y - 44 }} disabled={readOnly} onClick={() => onInsert(edge)} title={`Add step${edge.outcome ? ` to ${edge.outcome} branch` : ''}`} aria-label={`Add step after ${edge.from}${edge.outcome ? ` on ${edge.outcome} branch` : ''}`}><FlowIcon name="plus" size={16}/></button>; })}
-    {['trigger', ...graph.nodes.map(node => node.id)].map(id => { const node = graph.nodes.find(item => item.id === id), pos = position(id); if (!pos) return null; const kind = node?.type ?? 'trigger'; const blocked = issues.some(issue => issue.nodeId === id || (id === 'trigger' && (issue.field === 'trigger' || issue.path?.startsWith('trigger')))); return <button key={id} className={s.node} data-kind={kind} data-selected={selected === id} data-blocked={blocked} style={{ left: pos.x, top: pos.y }} onPointerDown={event => begin(event, id, pos)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { drag.current = null; setDragging(null); }} onClick={() => onSelect(id)} aria-pressed={selected === id}><span className={s.nodeTop}><span className={s.nodeIcon}><FlowIcon name={kind}/></span><span>{stepLabels[kind]}</span><span className={s.grip} aria-hidden="true">⠿</span></span><strong>{node ? stepSummary(node, options) : triggerLabel(graph, options)}</strong><small>{blocked ? 'Needs attention — review settings' : node?.type === 'email' ? (node.mode === 'test' ? 'Test delivery' : 'Live delivery when activated') : id === 'trigger' ? 'When a contact qualifies' : 'Click to configure'}</small></button>; })}
+    {['trigger', ...graph.nodes.map(node => node.id)].map(id => { const node = graph.nodes.find(item => item.id === id), pos = position(id); if (!pos) return null; const kind = node?.type ?? 'trigger'; const blocked = issues.some(issue => issue.nodeId === id || (id === 'trigger' && (issue.field === 'trigger' || issue.path?.startsWith('trigger')))); return <button key={id} className={s.node} data-kind={kind} data-selected={selected === id} data-blocked={blocked} style={{ left: pos.x, top: pos.y }} onPointerDown={event => begin(event, id, pos)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { drag.current = null; setDragging(null); }} onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onSelect(id); }} aria-pressed={selected === id}><span className={s.nodeTop}><span className={s.nodeIcon}><FlowIcon name={kind}/></span><span>{stepLabels[kind]}</span><span className={s.grip} aria-hidden="true">⠿</span></span><strong>{node ? stepSummary(node, options) : triggerLabel(graph, options)}</strong><small>{blocked ? 'Needs attention — review settings' : node?.type === 'email' ? (node.mode === 'test' ? 'Test delivery' : 'Live delivery when activated') : id === 'trigger' ? 'When a contact qualifies' : 'Click to configure'}</small></button>; })}
   </div></div></div>;
 }

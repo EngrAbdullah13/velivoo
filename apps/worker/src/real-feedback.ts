@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import type { MessageState, NormalizedProviderFeedback } from "../../../packages/contracts/src/types.js";
 import { isProviderTerminalState, projectProviderFeedbackState } from "../../../packages/domain/src/delivery-state.js";
 import { prisma } from "../../../packages/persistence/src/prisma/phase0-client.js";
@@ -32,9 +33,12 @@ export async function processFeedbackInbox(workspaceId: string, inboxId: string)
   const message = await prisma.message.findFirst({ where: { id: messageId, workspaceId } });
   if (!message) throw new Error("FEEDBACK_MESSAGE_NOT_FOUND");
   const receivedAt = new Date();
+  const occurredAt = new Date(event.occurredAt);
+  if (Number.isNaN(occurredAt.getTime())) throw new Error("FEEDBACK_OCCURRED_AT_INVALID");
 
   try {
     await prisma.$transaction(async (tx: any) => {
+      let eventInserted = false;
       try {
         await tx.deliveryEvent.create({ data: {
           id: randomUUID(),
@@ -43,24 +47,45 @@ export async function processFeedbackInbox(workspaceId: string, inboxId: string)
           provider: "ses",
           providerEventId: event.providerEventId,
           eventType: event.eventType,
-          occurredAt: new Date(event.occurredAt),
+          occurredAt,
           receivedAt,
           normalizedPayload: event as any,
         }});
+        eventInserted = true;
       } catch (error) {
         if (!p2002(error)) throw error;
       }
-
       const currentState = message.state as MessageState;
       const nextState = projectProviderFeedbackState(currentState, event.eventType);
       const stateAdvanced = nextState !== currentState;
-      await tx.message.update({
-        where: { id: message.id },
-        data: {
-          state: nextState,
-          ...(stateAdvanced && isProviderTerminalState(nextState) ? { finalAt: receivedAt } : {}),
-        },
-      });
+
+      if (eventInserted) {
+        await tx.message.update({
+          where: { id: message.id },
+          data: {
+            state: nextState,
+            ...(stateAdvanced && isProviderTerminalState(nextState) ? { finalAt: receivedAt } : {}),
+          },
+        });
+
+        if (event.eventType === "open") {
+          await tx.$executeRaw(Prisma.sql`
+            UPDATE "message"
+            SET
+              "first_opened_at" = CASE WHEN "first_opened_at" IS NULL OR "first_opened_at" > ${occurredAt} THEN ${occurredAt} ELSE "first_opened_at" END,
+              "last_opened_at" = CASE WHEN "last_opened_at" IS NULL OR "last_opened_at" < ${occurredAt} THEN ${occurredAt} ELSE "last_opened_at" END,
+              "open_count" = "open_count" + 1
+            WHERE "id" = ${message.id}::uuid AND "workspace_id" = ${workspaceId}::uuid
+          `);
+          await tx.traceEvent.create({ data: {
+            workspaceId,
+            aggregateType: "message",
+            aggregateId: message.id,
+            kind: "engagement.open",
+            detailJson: { classification: "provider", provider: "ses", isBotEvent: event.metadata?.openIsBotEvent ?? null },
+            occurredAt,
+          }});
+        }
 
       // A provider callback can recover an uncertain API response by using the
       // internal SES tag that was attached to the original submission.
@@ -100,10 +125,6 @@ export async function processFeedbackInbox(workspaceId: string, inboxId: string)
         });
       }
 
-      await tx.inboxMessage.update({
-        where: { id: inbox.id },
-        data: { status: "processed", processedAt: receivedAt, errorCode: null },
-      });
       await tx.traceEvent.create({ data: {
         workspaceId,
         aggregateType: "message",
@@ -119,6 +140,11 @@ export async function processFeedbackInbox(workspaceId: string, inboxId: string)
         },
         occurredAt: receivedAt,
       }});
+      }
+      await tx.inboxMessage.update({
+        where: { id: inbox.id },
+        data: { status: "processed", processedAt: receivedAt, errorCode: null },
+      });
     });
     return { outcome: "applied", messageId: message.id };
   } catch (error) {

@@ -212,12 +212,14 @@ export function TemplateImportModal({ workspaceId, onClose, onSaved, initialMeth
           </section>
           <section className="import-review-form">
             <label>Template name<input value={name} onChange={event => setName(event.target.value)} maxLength={160} required /></label>
-            <label>Folder / category <span className="field-optional">Optional</span><input value={category} onChange={event => setCategory(event.target.value)} maxLength={80} /></label>
-            <label>Default subject<input value={subject} onChange={event => setSubject(event.target.value)} /></label>
-            <label>Preview text<input value={preheader} onChange={event => setPreheader(event.target.value)} /></label>
+            <p className="import-review-guidance">Review the rendered HTML and any warnings. You can edit the subject and preview text now or later in the editor.</p>
+            <details className="import-optional-details"><summary>Optional email details</summary><div>
+              <label>Category<input value={category} onChange={event => setCategory(event.target.value)} maxLength={80} /></label>
+              <label>Default subject<input value={subject} onChange={event => setSubject(event.target.value)} /></label>
+              <label>Preview text<input value={preheader} onChange={event => setPreheader(event.target.value)} /></label>
+            </div></details>
             {result.htmlFileChoices && result.htmlFileChoices.length > 1 && <label>HTML file in ZIP<select value={selectedHtmlFile} onChange={event => setSelectedHtmlFile(event.target.value)}>{result.htmlFileChoices.map(choice => <option key={choice} value={choice}>{choice}</option>)}</select><button type="button" className="button-secondary" disabled={pending} onClick={() => void reprocessSelectedHtml()}>Use selected file</button></label>}
-            <section className="import-summary" aria-label="Import summary">
-              <h3>Import summary</h3>
+            <details className="import-summary" aria-label="Import summary"><summary>Import details</summary>
               <ul>
                 <li>{result.stats.imagesImported} images imported</li>
                 <li>{result.stats.buttonsDetected} buttons detected</li>
@@ -225,15 +227,15 @@ export function TemplateImportModal({ workspaceId, onClose, onSaved, initialMeth
                 <li>{result.stats.unsupportedRemoved} unsupported elements removed</li>
                 <li>{editableWarnings.length} warnings</li>
               </ul>
-            </section>
-            {editableWarnings.length > 0 && <section className="import-warnings"><h3>Warnings</h3><ul>{editableWarnings.map((warning, index) => <li key={`${warning.code}:${index}`}><textarea aria-label={`Warning ${index + 1}`} value={warning.message} rows={2} onChange={event => setEditableWarnings(current => current.map((item, i) => i === index ? { ...item, message: event.target.value } : item))} /></li>)}</ul></section>}
+            </details>
+            {editableWarnings.length > 0 && <section className="import-warnings"><h3>Review these warnings</h3><ul>{editableWarnings.map((warning, index) => <li key={`${warning.code}:${index}`}>{warning.message}</li>)}</ul></section>}
           </section>
         </div>
         {error && <p className="import-error" role="alert">{error}</p>}
         <footer>
           <button type="button" className="button-secondary" disabled={pending} onClick={() => setStep("method")}>Back</button>
           <button type="button" className="button-secondary" disabled={pending} onClick={onClose}>Cancel</button>
-          <button type="button" className="button-primary" disabled={pending || !name.trim()} onClick={() => void save()}>Save original HTML</button>
+          <button type="button" className="button-primary" disabled={pending || !name.trim()} onClick={() => void save()}>Save &amp; edit template</button>
         </footer>
       </>}
     </section>
@@ -241,25 +243,22 @@ export function TemplateImportModal({ workspaceId, onClose, onSaved, initialMeth
 }
 
 type NewTemplateEditor = "visual" | "text";
-type HtmlStart = "custom" | "import";
 
 export function CreateTemplateChoiceModal({ workspaceId, onClose, onCreate, onOpenGallery, pending = false, error = "" }: { workspaceId: string; onClose: () => void; onCreate: (input: { name: string; category?: string; editorType: NewTemplateEditor }) => void; onOpenGallery: () => void; pending?: boolean; error?: string }) {
   const [editorType, setEditorType] = useState<NewTemplateEditor | null>(null);
-  const [htmlStart, setHtmlStart] = useState<HtmlStart | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
-  if (htmlStart) return <TemplateImportModal workspaceId={workspaceId} initialMethod={htmlStart === "custom" ? "paste" : "html"} heading={htmlStart === "custom" ? "Create with custom HTML" : "Import a template"} description={htmlStart === "custom" ? "Paste your own email HTML, review the rendered result, then save it as an editable workspace template." : "Upload HTML, an .eml file, a ZIP export, or paste code from another email platform."} onClose={() => setHtmlStart(null)} onSaved={id => { window.location.href = `/w/${workspaceId}/content/templates/${id}/edit`; }} />;
+  if (importOpen) return <TemplateImportModal workspaceId={workspaceId} initialMethod="html" heading="Import an HTML template" description="Upload a file, import a ZIP with images, or paste your HTML code. Review the result before saving." onClose={() => setImportOpen(false)} onSaved={id => { window.location.href = `/w/${workspaceId}/content/templates/${id}/edit`; }} />;
   return <div className="modal-backdrop" role="presentation">
     <section className={`modal template-choice-modal ${editorType ? "template-create-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby="create-template-choice-title">
-      <header><div><span className="template-modal-eyebrow">{editorType ? "New template · Details" : "New template"}</span><h2 id="create-template-choice-title">{editorType ? "Name your template" : "How would you like to start?"}</h2><p>{editorType ? "Give this draft a clear name. You can add the subject, preview text, and sender details in the editor." : "Choose the editing experience that fits this reusable email."}</p></div><button type="button" className="modal-close" disabled={pending} onClick={onClose} aria-label="Close">×</button></header>
-      {!editorType ? <div className="template-choice-grid template-choice-grid-five">
-        <button type="button" className="template-choice-card" onClick={onOpenGallery}><span className="template-choice-icon" aria-hidden="true">✦</span><strong>Choose a template</strong><span>Start with a professionally designed, fully editable layout.</span></button>
-        <button type="button" className="template-choice-card" onClick={() => setEditorType("visual")}><span className="template-choice-icon" aria-hidden="true">＋</span><strong>Start from scratch</strong><span>Build a visual email from an empty canvas and reusable blocks.</span></button>
-        <button type="button" className="template-choice-card" onClick={() => setEditorType("text")}><span className="template-choice-icon" aria-hidden="true">T</span><strong>Simple text</strong><span>Write a focused, personal email with a plain-text-first editor.</span></button>
-        <button type="button" className="template-choice-card" onClick={() => setHtmlStart("custom")}><span className="template-choice-icon" aria-hidden="true">&lt;/&gt;</span><strong>Custom HTML</strong><span>Paste and edit your own responsive email HTML.</span></button>
-        <button type="button" className="template-choice-card" onClick={() => setHtmlStart("import")}><span className="template-choice-icon" aria-hidden="true">⇪</span><strong>Import</strong><span>Bring in an HTML, EML, or ZIP export from another platform.</span></button>
+      <header><div><span className="template-modal-eyebrow">New template</span><h2 id="create-template-choice-title">{editorType ? "Start with a blank template" : "How would you like to start?"}</h2><p>{editorType ? "Choose a visual or simple text email, give it a name, and start editing." : "Pick a starting point. You can edit everything before using it in a campaign."}</p></div><button type="button" className="modal-close" disabled={pending} onClick={onClose} aria-label="Close">×</button></header>
+      {!editorType ? <div className="template-choice-grid template-choice-grid-simple">
+        <button type="button" className="template-choice-card" onClick={onOpenGallery}><span className="template-choice-icon" aria-hidden="true">✦</span><strong>Choose a design</strong><span>Customize an editable starter layout.</span></button>
+        <button type="button" className="template-choice-card" onClick={() => setEditorType("visual")}><span className="template-choice-icon" aria-hidden="true">＋</span><strong>Start blank</strong><span>Build a visual email or write simple text.</span></button>
+        <button type="button" className="template-choice-card" onClick={() => setImportOpen(true)}><span className="template-choice-icon" aria-hidden="true">⇪</span><strong>Import HTML</strong><span>Upload HTML, EML, ZIP, or paste code.</span></button>
       </div> : <form className="template-create-details" onSubmit={event => { event.preventDefault(); if (!pending && name.trim()) onCreate({ name: name.trim(), category: category.trim() || undefined, editorType }); }}>
-        <div className="template-create-mode"><span className="template-choice-icon" aria-hidden="true">{editorType === "text" ? "T" : "＋"}</span><div><strong>{editorType === "text" ? "Simple text template" : "Visual template"}</strong><p>{editorType === "text" ? "Opens directly in the plain-text editor." : "Opens directly in the block builder with an empty canvas."}</p></div></div>
+        <fieldset className="template-editor-type-picker"><legend>Email format</legend><label className={editorType === "visual" ? "selected" : ""}><input type="radio" name="template-editor-type" checked={editorType === "visual"} onChange={() => setEditorType("visual")} /><strong>Visual</strong><span>Design with blocks and images</span></label><label className={editorType === "text" ? "selected" : ""}><input type="radio" name="template-editor-type" checked={editorType === "text"} onChange={() => setEditorType("text")} /><strong>Simple text</strong><span>Write a personal, text-first email</span></label></fieldset>
         <label><span>Template name <em>Required</em></span><input autoFocus value={name} maxLength={160} placeholder={editorType === "text" ? "e.g. Founder welcome note" : "e.g. September product announcement"} onChange={event => setName(event.target.value)} required /><small>Use a name your team will recognize in the template library.</small></label>
         <label><span>Category <em className="optional">Optional</em></span><input value={category} maxLength={80} placeholder="e.g. Newsletter, Promotion, Lifecycle" onChange={event => setCategory(event.target.value)} /><small>Categories make templates easier to find and reuse.</small></label>
         {error && <p className="import-error" role="alert">{error}</p>}

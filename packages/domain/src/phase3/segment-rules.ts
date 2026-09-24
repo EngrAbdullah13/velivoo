@@ -1,6 +1,10 @@
 export type RuleValueType='text'|'number'|'boolean'|'datetime';
 export type ProfileOperator='eq'|'neq'|'contains'|'does_not_contain'|'starts_with'|'ends_with'|'exists'|'not_exists'|'gt'|'gte'|'lt'|'lte'|'between'|'before'|'after'|'within_last';
 export type CountOperator='at_least'|'at_most'|'exactly';
+export type ActivityWindow=
+ |{mode:'all_time'}
+ |{mode:'within';amount:number;unit:'hours'|'days'|'weeks'|'months'}
+ |{mode:'between';from:string;to:string};
 export type EventPropertyFilter={key:string;valueType:RuleValueType;operator:ProfileOperator;value?:string|number|boolean;valueTo?:string|number;withinDays?:number};
 export type SegmentRule=
  |{type:'group';operator:'and'|'or';children:SegmentRule[]}
@@ -10,8 +14,8 @@ export type SegmentRule=
  |{type:'consent';channel:'email';purpose:'marketing';operator:'is';value:'granted'|'withdrawn'|'unknown'}
  |{type:'eligibility';operator:'is';value:'eligible'|'not_eligible'}
  |{type:'suppression';operator:'is_suppressed'|'is_not_suppressed';reason?:'complaint'|'global_unsubscribe'|'hard_bounce'|'category_unsubscribe'|'manual'|'administrative'|'legal'}
- |{type:'email_activity';event:'sent'|'delivered'|'bounced'|'complained'|'clicked'|'opened'|'unsubscribed';emailVersionId?:string;operator:CountOperator;count:number;withinDays:number}
- |{type:'event';name:string;schemaVersion?:number;operator:CountOperator;count:number;withinDays:number;property?:EventPropertyFilter};
+ |{type:'email_activity';event:'sent'|'delivered'|'bounced'|'complained'|'clicked'|'opened'|'unsubscribed';emailVersionId?:string;operator:CountOperator;count:number;withinDays?:number;window?:ActivityWindow}
+ |{type:'event';name:string;schemaVersion?:number;operator:CountOperator;count:number;withinDays?:number;window?:ActivityWindow;property?:EventPropertyFilter};
 
 export interface SegmentRuleLimits {maxDepth:number;maxLeaves:number;maxLookbackDays:number}
 export const DEFAULT_SEGMENT_LIMITS:SegmentRuleLimits={maxDepth:4,maxLeaves:20,maxLookbackDays:365};
@@ -25,6 +29,14 @@ const valueOperators=new Set<ProfileOperator>(['eq','neq','contains','does_not_c
 const countOperators=new Set<CountOperator>(['at_least','at_most','exactly']);
 const dateFields=new Set(['first_seen_at','created_at','updated_at','last_seen_at']);
 const comparison=(operator:CountOperator)=>operator==='at_least'?'>=':operator==='at_most'?'<=':'=';
+const validDate=(value:string)=>Number.isFinite(Date.parse(value));
+const windowSeconds=(amount:number,unit:'hours'|'days'|'weeks'|'months')=>amount*(unit==='hours'?3600:unit==='days'?86400:unit==='weeks'?604800:2592000);
+
+function activityWindowIssue(r:Extract<SegmentRule,{type:'email_activity'|'event'}>,path:string,issues:SegmentRuleIssue[],limits:SegmentRuleLimits){
+ if(!r.window){if(!Number.isInteger(r.withinDays)||r.withinDays!<1||r.withinDays!>limits.maxLookbackDays)issues.push({code:'LOOKBACK_INVALID',path,message:`Lookback must be 1-${limits.maxLookbackDays} days.`});return}
+ if(r.window.mode==='within'&&(!Number.isInteger(r.window.amount)||r.window.amount<1||windowSeconds(r.window.amount,r.window.unit)>limits.maxLookbackDays*86400))issues.push({code:'LOOKBACK_INVALID',path,message:`Rolling window must be between one hour and ${limits.maxLookbackDays} days.`});
+ if(r.window.mode==='between'&&(!validDate(r.window.from)||!validDate(r.window.to)||new Date(r.window.from)>=new Date(r.window.to)))issues.push({code:'DATE_RANGE_INVALID',path,message:'Custom date range requires a valid start before its end.'});
+}
 
 function profileIssue(r:{field:string;operator:ProfileOperator;value?:unknown;valueTo?:unknown;withinDays?:number;valueType?:RuleValueType},path:string,issues:SegmentRuleIssue[],limits:SegmentRuleLimits){
  if(!nativeFields.has(r.field)&&!(r.field.startsWith('property:')&&propertyKey.test(r.field.slice(9))))issues.push({code:'PROFILE_FIELD_UNSUPPORTED',path,message:'Profile field is not allowlisted.'});
@@ -43,7 +55,7 @@ export function validateSegmentRule(rule:SegmentRule,limits=DEFAULT_SEGMENT_LIMI
   if((r.type==='list'||r.type==='segment')&&!uuid.test(r.type==='list'?r.listId:r.segmentId))issues.push({code:r.type==='list'?'LIST_ID_INVALID':'SEGMENT_ID_INVALID',path,message:`${r.type==='list'?'List':'Segment'} ID is invalid.`});
   if(r.type==='suppression'&&r.reason&&!suppressionReasons.has(r.reason))issues.push({code:'SUPPRESSION_REASON_INVALID',path,message:'Suppression reason is unsupported.'});
   if((r.type==='email_activity'||r.type==='event')&&(!countOperators.has(r.operator)||!Number.isInteger(r.count)||r.count<0||r.count>1000))issues.push({code:'COUNT_INVALID',path,message:'Count must be 0-1000 with a supported comparison.'});
-  if((r.type==='email_activity'||r.type==='event')&&(!Number.isInteger(r.withinDays)||r.withinDays<1||r.withinDays>limits.maxLookbackDays))issues.push({code:'LOOKBACK_INVALID',path,message:`Lookback must be 1-${limits.maxLookbackDays} days.`});
+  if(r.type==='email_activity'||r.type==='event')activityWindowIssue(r,path,issues,limits);
   if(r.type==='email_activity'&&r.emailVersionId&&!uuid.test(r.emailVersionId))issues.push({code:'EMAIL_VERSION_ID_INVALID',path,message:'Email version ID is invalid.'});
   if(r.type==='email_activity'&&r.event==='unsubscribed'&&r.emailVersionId)issues.push({code:'UNSUBSCRIBE_VERSION_UNSUPPORTED',path,message:'Unsubscribe evidence cannot be reliably scoped to one Email version.'});
   if(r.type==='event'){if(!/^[a-z0-9._-]{1,120}$/i.test(r.name))issues.push({code:'EVENT_NAME_INVALID',path,message:'Event name contains unsupported characters.'});if(r.schemaVersion!==undefined&&(!Number.isInteger(r.schemaVersion)||r.schemaVersion<1))issues.push({code:'EVENT_SCHEMA_VERSION_INVALID',path,message:'Event schema version is invalid.'});if(r.property){if(!r.schemaVersion)issues.push({code:'EVENT_PROPERTY_SCHEMA_REQUIRED',path,message:'Event-property conditions require a selected schema version.'});if(!propertyKey.test(r.property.key))issues.push({code:'EVENT_PROPERTY_INVALID',path,message:'Event property is invalid.'});profileIssue({field:`property:${r.property.key}`,...r.property},path,issues,limits)}}
@@ -53,7 +65,7 @@ export function validateSegmentRule(rule:SegmentRule,limits=DEFAULT_SEGMENT_LIMI
 export function collectRuleLeaves(rule:SegmentRule):SegmentRule[]{return rule.type==='group'?rule.children.flatMap(collectRuleLeaves):[rule]}
 
 /** One allowlisted, parameterized compiler for Segments, Flow filters, exits and splits. */
-export function compileSegmentRule(rule:SegmentRule,options:{at?:Date}={}):SegmentCompiledPlan{
+export function compileSegmentRule(rule:SegmentRule,options:{at?:Date;flowRunId?:string}={}):SegmentCompiledPlan{
  const issues=validateSegmentRule(rule);if(issues.length)throw new Error(`SEGMENT_RULE_INVALID:${issues.map(x=>x.code).join(',')}`);
  const params:unknown[]=[];let complexity=0;const p=(v:unknown)=>{params.push(v);return `$${params.length}`};const now=()=>options.at?p(options.at):'NOW()';const since=(days:number)=>`(${now()}::timestamptz - (${p(days)}::int * INTERVAL '1 day'))`;
  const activeSuppression=(reason?:string)=>`EXISTS (SELECT 1 FROM suppression sp WHERE sp.workspace_id=p.workspace_id AND sp.profile_id=p.id AND sp.channel='email' AND sp.revoked_at IS NULL AND (sp.expires_at IS NULL OR sp.expires_at>${now()})${reason?` AND sp.reason=${p(reason)}`:''})`;
@@ -73,7 +85,20 @@ export function compileSegmentRule(rule:SegmentRule,options:{at?:Date}={}):Segme
   if(!operator)throw new Error(`PROFILE_OPERATOR_UNSUPPORTED:${r.operator}`);
   return `${column} ${operator} ${value}`;
  };
- const activityCount=(r:Extract<SegmentRule,{type:'email_activity'}>):string=>{const version=r.emailVersionId?` AND m.email_version_id=${p(r.emailVersionId)}::uuid`:'';const count=p(r.count),op=comparison(r.operator),start=since(r.withinDays);if(r.event==='sent')return `(SELECT COUNT(*) FROM message m WHERE m.workspace_id=p.workspace_id AND m.profile_id=p.id AND m.source_type<>'test' AND m.submitted_at>=${start}${version}) ${op} ${count}`;if(r.event==='clicked'||r.event==='opened')return `(SELECT COUNT(DISTINCT te.id) FROM trace_event te JOIN message m ON m.id=te.aggregate_id AND m.workspace_id=te.workspace_id WHERE te.workspace_id=p.workspace_id AND te.aggregate_type='message' AND m.profile_id=p.id AND te.kind=${p(`engagement.${r.event==='clicked'?'click':'open'}`)} AND te.occurred_at>=${start} AND COALESCE(te.detail_json->>'classification','human') NOT IN ('bot','scanner')${version}) ${op} ${count}`;if(r.event==='unsubscribed')return `(SELECT COUNT(*) FROM consent_record cr WHERE cr.workspace_id=p.workspace_id AND cr.profile_id=p.id AND cr.channel='email' AND cr.purpose='marketing' AND cr.status='withdrawn' AND cr.occurred_at>=${start}) ${op} ${count}`;const events=r.event==='bounced'?['bounce','soft_bounce','hard_bounce']:[r.event];return `(SELECT COUNT(*) FROM delivery_event de JOIN message m ON m.id=de.message_id AND m.workspace_id=de.workspace_id WHERE de.workspace_id=p.workspace_id AND m.profile_id=p.id AND de.event_type IN (${events.map(p).join(',')}) AND de.occurred_at>=${start}${version}) ${op} ${count}`};
+ const timeClause=(column:string,r:Extract<SegmentRule,{type:'email_activity'|'event'}>)=>{if(!r.window)return ` AND ${column}>=${since(r.withinDays!)}`;if(r.window.mode==='all_time')return '';if(r.window.mode==='between')return ` AND ${column}>=${p(new Date(r.window.from))}::timestamptz AND ${column}<=${p(new Date(r.window.to))}::timestamptz`;const interval={hours:'1 hour',days:'1 day',weeks:'1 week',months:'1 month'}[r.window.unit];return ` AND ${column}>=(${now()}::timestamptz - (${p(r.window.amount)}::int * INTERVAL '${interval}'))`};
+ const activityCount=(r:Extract<SegmentRule,{type:'email_activity'}>):string=>{
+  // Flow decisions must only inspect messages belonging to this recipient's
+  // current run. Segment evaluation has no flowRunId and intentionally keeps
+  // its historical, profile-scoped behavior.
+  const run=options.flowRunId?` AND m.flow_run_id=${p(options.flowRunId)}::uuid`:'';
+  const version=r.emailVersionId?` AND m.email_version_id=${p(r.emailVersionId)}::uuid`:'';
+  const count=p(r.count),op=comparison(r.operator);
+  if(r.event==='sent')return `(SELECT COUNT(*) FROM message m WHERE m.workspace_id=p.workspace_id AND m.profile_id=p.id AND m.source_type<>'test'${run}${timeClause('m.submitted_at',r)}${version}) ${op} ${count}`;
+  if(r.event==='clicked'||r.event==='opened')return `(SELECT COUNT(DISTINCT te.id) FROM trace_event te JOIN message m ON m.id=te.aggregate_id AND m.workspace_id=te.workspace_id WHERE te.workspace_id=p.workspace_id AND te.aggregate_type='message' AND m.profile_id=p.id${run} AND te.kind=${p(`engagement.${r.event==='clicked'?'click':'open'}`)}${timeClause('te.occurred_at',r)} AND LOWER(COALESCE(te.detail_json->>'classification','human')) NOT IN ('bot','scanner','machine') AND LOWER(COALESCE(te.detail_json->>'isBotEvent',te.detail_json->'metadata'->>'openIsBotEvent','unlikely')) NOT IN ('likely','true','bot','scanner')${version}) ${op} ${count}`;
+  if(r.event==='unsubscribed')return `(SELECT COUNT(*) FROM consent_record cr WHERE cr.workspace_id=p.workspace_id AND cr.profile_id=p.id AND cr.channel='email' AND cr.purpose='marketing' AND cr.status='withdrawn'${timeClause('cr.occurred_at',r)}) ${op} ${count}`;
+  const events=r.event==='bounced'?['bounce','soft_bounce','hard_bounce']:[r.event];
+  return `(SELECT COUNT(*) FROM delivery_event de JOIN message m ON m.id=de.message_id AND m.workspace_id=de.workspace_id WHERE de.workspace_id=p.workspace_id AND m.profile_id=p.id${run} AND de.event_type IN (${events.map(p).join(',')})${timeClause('de.occurred_at',r)}${version}) ${op} ${count}`;
+ };
  const eventProperty=(filter:EventPropertyFilter)=>{const key=p(filter.key),col=filter.valueType==='number'?`(e.properties_json->>${key})::numeric`:filter.valueType==='boolean'?`(e.properties_json->>${key})::boolean`:filter.valueType==='datetime'?`(e.properties_json->>${key})::timestamptz`:`e.properties_json->>${key}`;return ` AND (${typedComparison(col,filter)})`};
  const c=(r:SegmentRule):string=>{
   complexity++;
@@ -104,7 +129,7 @@ export function compileSegmentRule(rule:SegmentRule,options:{at?:Date}={}):Segme
   if(r.type==='email_activity')return activityCount(r);
   const schema=r.schemaVersion===undefined?'':` AND e.schema_version=${p(r.schemaVersion)}`;
   const property=r.property?eventProperty(r.property):'';
-  return `(SELECT COUNT(*) FROM event e WHERE e.workspace_id=p.workspace_id AND e.profile_id=p.id AND e.event_name=${p(r.name)} AND e.occurred_at>=${since(r.withinDays)}${schema}${property}) ${comparison(r.operator)} ${p(r.count)}`;
+  return `(SELECT COUNT(*) FROM event e WHERE e.workspace_id=p.workspace_id AND e.profile_id=p.id AND e.event_name=${p(r.name)}${timeClause('e.occurred_at',r)}${schema}${property}) ${comparison(r.operator)} ${p(r.count)}`;
  };
  return {sql:c(rule),params,complexity};
 }

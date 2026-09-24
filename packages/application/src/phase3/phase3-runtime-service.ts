@@ -54,7 +54,7 @@ export class Phase3RuntimeService{
     const version=await this.repo.flowVersion(action.workspaceId,run.flowVersionId);if(!version)throw new Error('FLOW_VERSION_NOT_FOUND');
     const graph=version.graph,node=nodeMap(graph).get(action.nodeId);if(!node)throw new Error('FLOW_NODE_NOT_FOUND');
 
-    for(const rule of graph.exitRules){const ev=await this.rules.evaluate({workspaceId:action.workspaceId,profileId:run.profileId,rule,at:now});if(ev.result){
+    for(const rule of graph.exitRules){const ev=await this.rules.evaluate({workspaceId:action.workspaceId,profileId:run.profileId,flowRunId:run.id,rule,at:now});if(ev.result){
       const result=await this.repo.transaction(tx=>tx.exitRunAndCancelPending({workspaceId:run.workspaceId,runId:run.id,actionId:action.id,now,reason:'EXIT_RULE',detail:{reason:'EXIT_RULE',evidence:ev.evidence}}));return {status:'exited',...result} as const;
     }}
 
@@ -67,7 +67,7 @@ export class Phase3RuntimeService{
         const p=await this.repo.profileContext(run.workspaceId,run.profileId);if(!p)throw new Error('PROFILE_NOT_FOUND');const timeZone=p.timezone||p.workspaceTimezone;
         nextAt=nextLocalWallClockInstant({after:now,timeZone,hour:node.hour,minute:node.minute});evaluation={timeZone,timeZoneSource:p.timezone?'profile':'workspace',calculatedUtc:nextAt.toISOString()};next=await this.successor(graph,node)
       }
-      else if(node.type==='conditional'){const ev=await this.rules.evaluate({workspaceId:run.workspaceId,profileId:run.profileId,rule:node.rule,at:now});evaluation={result:ev.result,evidence:ev.evidence};next=await this.successor(graph,node,ev.result)}
+      else if(node.type==='conditional'){const ev=await this.rules.evaluate({workspaceId:run.workspaceId,profileId:run.profileId,flowRunId:run.id,rule:node.rule,at:now});evaluation={result:ev.result,evidence:ev.evidence};next=await this.successor(graph,node,ev.result)}
       else if(node.type==='email'){
         const emailMode=flowEmailNodeMode(node,flow.status,graph.trigger);
         if((flow.status==='testing'&&emailMode!=='test')||(flow.status==='active'&&emailMode!=='live'))throw new Error('EMAIL_NODE_MODE_FLOW_STATE_MISMATCH');
@@ -94,8 +94,8 @@ export class Phase3RuntimeService{
     const now=input.now??new Date();
     if(input.mode==='stop_new_entries'){await this.repo.setFlowExecutionState({workspaceId:input.workspaceId,flowId:input.flowId,entryState:'blocked',executionState:'running',status:'paused'});return {newEntriesBlocked:1,heldActions:0,cancelledRuns:0,cancelledActions:0,cancelledMessages:0}}
     if(input.mode==='pause_future_actions'){await this.repo.setFlowExecutionState({workspaceId:input.workspaceId,flowId:input.flowId,entryState:'blocked',executionState:'paused',pausedAt:now,status:'paused'});const held=await this.repo.holdPendingActions(input.workspaceId,input.flowId);return {newEntriesBlocked:1,heldActions:held,cancelledRuns:0,cancelledActions:0,cancelledMessages:0}}
-    const cancelled=await this.repo.cancelPendingRunsAndActions(input.workspaceId,input.flowId,now),messages=await this.messages.cancelPendingForRuns({workspaceId:input.workspaceId,runIds:cancelled.runIds});
     await this.repo.setFlowExecutionState({workspaceId:input.workspaceId,flowId:input.flowId,entryState:'blocked',executionState:'paused',pausedAt:now,status:'paused'});
+    const cancelled=await this.repo.cancelPendingRunsAndActions(input.workspaceId,input.flowId,now),messages=await this.messages.cancelPendingForRuns({workspaceId:input.workspaceId,runIds:cancelled.runIds});
     return {newEntriesBlocked:1,heldActions:0,cancelledRuns:cancelled.runs,cancelledActions:cancelled.actions,cancelledMessages:messages};
   }
 

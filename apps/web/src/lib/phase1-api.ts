@@ -1,4 +1,5 @@
 import { apiAuthHeaders } from "./api-auth";
+import { apiBaseUrl } from "./api-url";
 
 export type ApiError = { error?: { code?: string; message?: string } };
 
@@ -42,6 +43,8 @@ const friendlyErrors:Record<string,string>={
   FLOW_NOT_IN_TESTING:'Start a test run only after activating this Flow in testing mode.',
   FLOW_VALIDATION_FAILED:'This Flow has blocking validation issues. Resolve them before publishing or activating.',
   FLOW_NOT_ACTIVE:'This Flow is not active. Publish and activate it before starting a test run.',
+  LIST_ACTIVE_FLOW_DEPENDENCY:'This list is connected to a live or paused flow. Delete or disconnect that flow before deleting this list.',
+  LIST_ACTIVE_SEGMENT_DEPENDENCY:'This list is used by an active segment. Change or archive that segment before deleting the list.',
   PROFILE_NOT_FOUND:'Select a workspace profile before starting a test run.',
   COOLDOWN_INVALID:'Re-entry cooldown must be at least 60 seconds (1 minute) and at most 1 year. Open Trigger settings and fix the cooldown duration.',
 };
@@ -49,10 +52,10 @@ const friendlyErrors:Record<string,string>={
 function presentError(code:string,detail:string){const friendly=friendlyErrors[code];if(friendly)return `${friendly} Diagnostic code: ${code}`;if(code.startsWith('HTTP_'))return `The request could not be completed. Please try again. Diagnostic code: ${code}`;return `${detail||'The request could not be completed.'} Diagnostic code: ${code}`}
 
 export async function phase1Api<T>(path:string, init:RequestInit={}):Promise<T>{
-  const base=process.env.NEXT_PUBLIC_EMAIL_PLATFORM_API_URL??'http://localhost:4000';
+  const base=apiBaseUrl();
   let response:Response;
   try{response=await fetch(`${base}${path}`,{...init,credentials:'include',headers:{'content-type':'application/json',...apiAuthHeaders(),...(init.headers??{})},cache:'no-store'})}
-  catch{throw new Error(`The application server is unavailable. Start the local API and try again. Diagnostic code: API_UNREACHABLE`)}
+  catch{throw new Error(`The API gateway is unreachable. Check that the application server and its private API process are running. Diagnostic code: API_UNREACHABLE`)}
   const raw=await response.text();let data:any={};try{data=raw?JSON.parse(raw):{raw}}catch{data={raw}}
   if(!response.ok){const errorBody=data?.error;const detail=typeof errorBody==='string'?errorBody:errorBody&&typeof errorBody.message==='string'?errorBody.message:typeof data?.message==='string'?data.message:`Request failed (${response.status})`;const code=errorBody&&typeof errorBody.code==='string'?errorBody.code:`HTTP_${response.status}`;throw new Error(presentError(code,detail))}
   return data as T;

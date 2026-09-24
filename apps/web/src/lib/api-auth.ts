@@ -1,3 +1,5 @@
+import { apiBaseUrl } from "./api-url";
+
 export function apiAuthHeaders(): Record<string, string> {
   const token = typeof window !== "undefined" ? window.localStorage.getItem("emailPlatformAccessToken") : null;
   if (token) return { authorization: `Bearer ${token}` };
@@ -23,7 +25,7 @@ export async function redirectForWorkspaceAccessFailure(workspaceId: string, err
   }
 
   try {
-    const base = process.env.NEXT_PUBLIC_EMAIL_PLATFORM_API_URL ?? "http://localhost:4000";
+    const base = apiBaseUrl();
     const response = await fetch(`${base}/api/v1/me/workspaces`, {
       credentials: "include",
       headers: { "content-type": "application/json", ...apiAuthHeaders() },

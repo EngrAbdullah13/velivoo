@@ -14,15 +14,15 @@ export interface P2TemplateUsage {id:string;workspaceId:string;templateId:string
 export interface P2TemplateLibraryInput { cursor?:string; limit:number; query?:string; archived?:boolean }
 export interface P2TemplateLibraryPage { items:P2EmailTemplate[]; nextCursor:string|null }
 export interface P2Workspace {id:string;businessAddress:string;timezone:string;legalName:string}
-export interface P2SenderIdentity {id:string;workspaceId:string;domainId:string;fromName:string;fromEmail:string;replyTo:string;status:string}
-export interface P2SenderDomain {id:string;workspaceId:string;domain:string;rootDomain?:string|null;workspacePrimary?:boolean;status:string;providerRegion?:string|null;providerReference?:string|null;provisioningMode?:string;provisioningVersion?:string|null;authenticationStatus?:string;readinessStatus?:string;dkimStatus?:string|null;mailFromStatus?:string|null;mailFromDomain?:string|null;dkimSigningMode?:string|null;delegatedSubdomain?:string|null;trackingDomain?:string|null}
+export interface P2SenderIdentity {id:string;workspaceId:string;domainId:string;fromName:string;fromEmail:string;replyTo:string;purpose:"marketing"|"transactional";status:string}
+export interface P2SenderDomain {id:string;workspaceId:string;domain:string;rootDomain?:string|null;sendingPurpose?:"marketing"|"transactional"|null;workspacePrimary?:boolean;status:string;providerRegion?:string|null;providerReference?:string|null;provisioningMode?:string;provisioningVersion?:string|null;authenticationStatus?:string;readinessStatus?:string;dkimStatus?:string|null;mailFromStatus?:string|null;mailFromDomain?:string|null;dkimSigningMode?:string|null;delegatedSubdomain?:string|null;trackingDomain?:string|null}
 export interface P2WorkspaceProviderConfig {provider:string;region:string;configurationSetName?:string|null;providerStatus:string}
 export interface P2DeliveryRoute {id:string;workspaceId:string;senderDomainId:string;provider:string;providerRegion:string;providerIdentityReference?:string|null;configurationSetName?:string|null;mailFromDomain?:string|null;trackingMode:string;trackingHostname?:string|null;status:string;holdReason?:string|null;rateLimitPerSecond?:number|null;warmingDailyLimit?:number|null}
-export interface P2Message {id:string;workspaceId:string;sourceType:string;sourceId:string;flowRunId?:string|null;nodeId?:string|null;profileId:string;emailVersionId:string;emailTestSnapshotId?:string|null;idempotencyKey:string;state:string;policyDecision?:unknown;scheduledFor:Date;renderedAt?:Date|null;submittedAt?:Date|null;finalAt?:Date|null;createdAt:Date}
+export interface P2Message {id:string;workspaceId:string;sourceType:string;sourceId:string;flowRunId?:string|null;nodeId?:string|null;profileId:string;emailVersionId:string;emailTestSnapshotId?:string|null;idempotencyKey:string;state:string;policyDecision?:unknown;scheduledFor:Date;renderedAt?:Date|null;submittedAt?:Date|null;finalAt?:Date|null;firstOpenedAt?:Date|null;lastOpenedAt?:Date|null;openCount:number;createdAt:Date}
 export interface P2DeliveryAttempt {id:string;workspaceId:string;messageId:string;attemptNumber:number;provider:string;routeId?:string|null;requestFingerprint:string;providerMessageId?:string|null;state:string}
 export interface P2Hold {id:string;workspaceId:string;scopeType:string;scopeId?:string|null;reason:string;state:string;createdAt:Date;releasedAt?:Date|null}
 export interface P2TrackingLink {id:string;workspaceId:string;messageId:string;destination:string}
-export interface P2AnalyticsPeriod {submitted:number;delivered:number;bounces:number;complaints:number;uniqueClicks:number;from:Date;to:Date;freshness:Date}
+export interface P2AnalyticsPeriod {submitted:number;delivered:number;bounces:number;complaints:number;uniqueClicks:number;uniqueOpens:number;from:Date;to:Date;freshness:Date}
 
 export interface Phase2Repository {
   transaction<T>(fn:(tx:Phase2Repository)=>Promise<T>):Promise<T>;
@@ -57,6 +57,7 @@ export interface Phase2Repository {
   createImportedEmailTemplate(input:{workspaceId:string;name:string;category?:string;document:StructuredEmailDocument;subject:string;preheader:string;plainText:string;settings?:Record<string,unknown>;actorId:string;templateType:string;importMethod:string;originalFilename:string|null;originalSourceHtml:string; sanitizedHtml:string;conversionStatus:string;importWarnings:P2EmailTemplate["importWarnings"];importedAt:Date;importedByUserId:string}):Promise<P2EmailTemplate>;
   updateEmailTemplate(input:{workspaceId:string;templateId:string;name?:string;category?:string|null;document?:StructuredEmailDocument;subject?:string;preheader?:string;plainText?:string;settings?:Record<string,unknown>|null;originalSourceHtml?:string|null;sanitizedHtml?:string|null;conversionStatus?:string;templateType?:string;importWarnings?:P2EmailTemplate["importWarnings"];actorId?:string}):Promise<P2EmailTemplate>;
   archiveEmailTemplate(input:{workspaceId:string;templateId:string;archived:boolean}):Promise<P2EmailTemplate>;
+  deleteEmailTemplate(input:{workspaceId:string;templateId:string}):Promise<void>;
   listUniversalBlocks(workspaceId:string,input:{archived?:boolean}):Promise<P2UniversalBlock[]>;
   createUniversalBlock(input:{workspaceId:string;name:string;category?:string;blocks:StructuredEmailDocument["blocks"];actorId:string}):Promise<P2UniversalBlock>;
   updateUniversalBlock(input:{workspaceId:string;blockId:string;name?:string;category?:string|null;blocks?:StructuredEmailDocument["blocks"]}):Promise<P2UniversalBlock>;
@@ -107,6 +108,7 @@ export interface Phase2Repository {
 
   recordControlledSubmissionGate?(input:{workspaceId:string;messageId:string}):Promise<void>;
   recordDeliveryEvent(input:{workspaceId:string;messageId:string;provider:string;providerEventId:string;eventType:string;occurredAt:Date;payload:unknown}):Promise<boolean>;
+  recordMessageOpen(input:{workspaceId:string;messageId:string;occurredAt:Date}):Promise<void>;
   createProtectedSuppression(input:{workspaceId:string;profileId:string;reason:"hard_bounce"|"complaint";sourceReference:string}):Promise<void>;
   createTrackingLink(input:{workspaceId:string;messageId:string;destination:string;destinationHash:string}):Promise<P2TrackingLink>;
   trackingLink(workspaceId:string,id:string):Promise<P2TrackingLink|null>;

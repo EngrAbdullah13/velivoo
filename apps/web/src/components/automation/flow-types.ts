@@ -1,8 +1,9 @@
 export type { FlowGraph3 as Graph, FlowNode3 as Step, FlowEdge3 as Connection, FlowTrigger as Trigger, FlowIssue3 as Issue } from '../../../../../packages/domain/src/phase3/flow';
 export type { SegmentRule as Rule, RuleValueType, ProfileOperator } from '../../../../../packages/domain/src/phase3/segment-rules';
-import type { FlowGraph3, FlowIssue3 } from '../../../../../packages/domain/src/phase3/flow';
+import type { FlowGraph3, FlowIssue3, FlowTrigger } from '../../../../../packages/domain/src/phase3/flow';
 export type Capabilities = { canRead: boolean; canWrite: boolean; canPublish: boolean; canActivate: boolean; canOperate: boolean; canReadAnalytics: boolean };
-export type FlowDetail = { id: string; name: string; status: string; rowVersion: number; activeVersionId?: string | null; draftGraph: FlowGraph3; capabilities: Capabilities; versions: { id: string; versionNumber: number; graphJson: FlowGraph3 }[]; validation?: { issuesJson?: FlowIssue3[]; issues?: FlowIssue3[] } | null };
+export type FlowLiveState = { hasActiveVersion: boolean; hasUnpublishedChanges: boolean; activeVersionId: string | null; activeVersionNumber: number | null; activeTrigger: FlowTrigger | null; draftTrigger: FlowTrigger | null };
+export type FlowDetail = { id: string; name: string; status: string; rowVersion: number; activeVersionId?: string | null; draftGraph: FlowGraph3; capabilities: Capabilities; versions: { id: string; versionNumber: number; graphJson: FlowGraph3 }[]; liveState: FlowLiveState; validation?: { issuesJson?: FlowIssue3[]; issues?: FlowIssue3[] } | null };
 export type EmailChoice = { id: string; name: string; versionNumber: number; emailDefinitionId: string; preflightState: string; readinessState: string; readinessDetail: string; senderIdentity?: { fromName: string; fromEmail: string } | null };
 export type NamedChoice = { id: string; name: string };
 export type BuilderOptions = { lists: NamedChoice[]; segments: NamedChoice[]; events: { eventName: string; schemaVersion: number }[]; dateProperties: { key: string; displayName: string; dataType: string }[]; emails: EmailChoice[]; triggerContracts: Record<string, string>; deliveryPacing: { ratePerSecond: number; scope: 'workspace'; queue: 'persistent' } };

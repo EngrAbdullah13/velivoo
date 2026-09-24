@@ -3,6 +3,7 @@ export interface ParsedVariable { raw: string; namespace: VariableNamespace; pat
 export interface ContentVariableDefinition { key:string; label:string; namespace:VariableNamespace; path:string; type:"text"|"url"; requiresFallback:boolean; availability:"always"|"profile"|"event" }
 /** The editor consumes this server-owned vocabulary; unsupported runtime data is never offered. */
 export const RELEASE1_VARIABLES:ContentVariableDefinition[]=[
+  {key:"profile.full_name",label:"Full name",namespace:"profile",path:"full_name",type:"text",requiresFallback:true,availability:"profile"},
   {key:"profile.first_name",label:"First name",namespace:"profile",path:"first_name",type:"text",requiresFallback:true,availability:"profile"},
   {key:"profile.last_name",label:"Last name",namespace:"profile",path:"last_name",type:"text",requiresFallback:true,availability:"profile"},
   {key:"profile.email",label:"Email",namespace:"profile",path:"email",type:"text",requiresFallback:true,availability:"profile"},

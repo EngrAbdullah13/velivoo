@@ -42,28 +42,43 @@ function findRedisServer(): string {
   return "redis-server";
 }
 
-async function ensureRedis() {
+async function ensureRedis(): Promise<boolean> {
   if (await portReachable(REDIS_PORT)) {
     console.log(`Redis already running on 127.0.0.1:${REDIS_PORT}`);
-    return;
+    return true;
   }
   const redisServer = findRedisServer();
   console.log(`Starting Redis (${redisServer})...`);
-  const child = spawn(redisServer, [], {
-    cwd: root,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  });
-  child.unref();
+  let launchErrorMessage = "";
+  try {
+    const child = spawn(redisServer, [], {
+      cwd: root,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.once("error", (error) => { launchErrorMessage = error.message; });
+    child.unref();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown Windows process error";
+    console.warn(`Redis could not start: ${reason}`);
+    console.warn("The web/API stack will continue, but queue workers require a permitted Redis 5+ service on localhost:6379.");
+    return false;
+  }
   for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (launchErrorMessage) {
+      console.warn(`Redis could not start: ${launchErrorMessage}`);
+      console.warn("The web/API stack will continue, but queue workers require a permitted Redis 5+ service on localhost:6379.");
+      return false;
+    }
     if (await portReachable(REDIS_PORT)) {
       console.log(`Redis ready on 127.0.0.1:${REDIS_PORT}`);
-      return;
+      return true;
     }
     await sleep(250);
   }
-  throw new Error(`Redis did not start on 127.0.0.1:${REDIS_PORT}. Set REDIS_SERVER_PATH or start redis-server manually.`);
+  console.warn(`Redis did not start on 127.0.0.1:${REDIS_PORT}. Set REDIS_SERVER_PATH or start a permitted Redis service manually.`);
+  return false;
 }
 
 async function ngrokForwardingToPublicApi(): Promise<boolean> {
@@ -88,13 +103,19 @@ async function ensureNgrok() {
     return;
   }
   console.log(`Starting ngrok http ${PUBLIC_API_PORT}...`);
-  const child = spawn("ngrok", ["http", String(PUBLIC_API_PORT)], {
-    cwd: root,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  });
-  child.unref();
+  try {
+    const child = spawn("ngrok", ["http", String(PUBLIC_API_PORT)], {
+      cwd: root,
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.unref();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown Windows process error";
+    console.warn(`ngrok could not start: ${reason}`);
+    return;
+  }
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (await ngrokForwardingToPublicApi()) {
       console.log(`ngrok ready for public API on port ${PUBLIC_API_PORT}`);
@@ -106,8 +127,12 @@ async function ensureNgrok() {
   console.warn("ngrok did not confirm a tunnel to the public API. Start it manually: ngrok http 4001");
 }
 
-await ensureRedis();
+const redisReady = await ensureRedis();
 await ensureNgrok();
+
+if (!redisReady) {
+  console.warn("Queue workers will remain unavailable until Redis is running. The local web/API services will still start.");
+}
 
 console.log("");
 console.log("Starting application stack (npm run dev:all)...");
@@ -118,7 +143,13 @@ const child: ChildProcess = spawn(
   ["--env-file=.env", "--import", "tsx", "apps/api/src/dev-all.ts"],
   {
     cwd: root,
-    env: process.env,
+    env: redisReady ? process.env : {
+      ...process.env,
+      REDIS_URL: "",
+      EMAIL_PLATFORM_DELIVERY_QUEUE_ENABLED: "false",
+      EMAIL_PLATFORM_PHASE3_QUEUE_ENABLED: "false",
+      EMAIL_PLATFORM_IMPORT_QUEUE_ENABLED: "false",
+    },
     stdio: "inherit",
     windowsHide: false,
   },

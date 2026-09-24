@@ -174,7 +174,7 @@ export interface DeliveryEvent {
   messageId: string;
   provider: string;
   providerEventId: string;
-  eventType: "delivery" | "bounce" | "complaint" | "delay" | "reject";
+    eventType: "delivery" | "bounce" | "complaint" | "delay" | "reject" | "open";
   occurredAt: string;
   receivedAt: string;
 }

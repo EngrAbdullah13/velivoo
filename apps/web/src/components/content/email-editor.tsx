@@ -1,18 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EmailDraft, PreflightIssue } from "../../../../../packages/domain/src/phase2/content";
-import { DocumentBuilder, type PreviewMode } from "./document-builder";
+import type { ComplianceFooterBlock, EmailDraft, PreflightIssue } from "../../../../../packages/domain/src/phase2/content";
+import { DocumentBuilder, FooterInspector, type PreviewMode } from "./document-builder";
 import { PlainTextEditorPanel } from "./inbox-metadata-bar";
+import { inboxPersonalizationVariables, personalizationToken, PersonalizationPicker, type PersonalizationVariable } from "./personalization-picker";
 import { phase1Api } from "../../lib/phase1-api";
 
 interface Sender { id: string; fromName: string; fromEmail: string; replyTo?: string }
 interface Version { id: string; versionNumber: number; publishedAt: string }
 interface Dependency { id: string; flowId: string; nodeId: string }
 interface Profile { id: string; firstName?: string | null; lastName?: string | null; originalEmail: string }
-interface Variable { key: string; label: string; requiresFallback: boolean }
+type Variable = PersonalizationVariable;
 interface Preview { html: string; text: string }
-type CampaignPanel = "settings" | "preview" | "preflight" | "history" | null;
+type CampaignPanel = "settings" | "footer" | "preview" | "preflight" | "history" | null;
 
 const profileName = (profile: Profile) => `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() || profile.originalEmail;
 
@@ -191,6 +192,7 @@ export function EmailEditor({ workspaceId, emailId }: { workspaceId: string; ema
   if (!draft) return <section className="template-editor-loading" aria-live="polite"><div className="loading-shimmer loading-shimmer-title" /><div className="loading-shimmer loading-shimmer-body" /><p>{status}</p></section>;
 
   const selectedSender = senders.find(sender => sender.id === draft.senderIdentityId) ?? null;
+  const footerBlock: ComplianceFooterBlock = draft.structuredDocument.blocks.find((block): block is ComplianceFooterBlock => block.type === "compliance_footer") ?? { id: "compliance", type: "compliance_footer", locked: true };
   const latestVersion = versions.length ? versions[versions.length - 1] : null;
   const blockingIssues = issues.filter(issue => issue.severity === "blocking");
   const warningIssues = issues.filter(issue => issue.severity === "warning");
@@ -221,25 +223,67 @@ export function EmailEditor({ workspaceId, emailId }: { workspaceId: string; ema
 
     <div className="template-editor-workspace">
       {previewMode === "plain"
-        ? <PlainTextEditorPanel subject={draft.subject} preheader={draft.preheader} plainText={draft.plainText} onMetadataChange={patch => update(patch)} onChange={plainText => update({ plainText, plainTextMode: "manual" })} />
-        : <DocumentBuilder document={draft.structuredDocument} variables={variables} previewMode={previewMode} messageSettings={{ subject: draft.subject, preheader: draft.preheader, plainText: draft.plainText, category: null, notes: "", templateType: "campaign_email", useCase: "", tags: "" }} onMessageSettingsChange={patch => update({ subject: patch.subject ?? draft.subject, preheader: patch.preheader ?? draft.preheader, plainText: patch.plainText ?? draft.plainText, ...(patch.plainText !== undefined ? { plainTextMode: "manual" as const } : {}) })} onChange={structuredDocument => change({ ...draft, structuredDocument })} defaultInspector={<CampaignOverviewInspector draft={draft} sender={selectedSender} issues={issues} onOpenSettings={() => setActivePanel("settings")} onOpenPreview={() => setActivePanel("preview")} onRunPreflight={() => void runPreflight()} />} />}
+        ? <PlainTextEditorPanel subject={draft.subject} preheader={draft.preheader} plainText={draft.plainText} variables={variables} onMetadataChange={patch => update(patch)} onChange={plainText => update({ plainText, plainTextMode: "manual" })} />
+        : <DocumentBuilder workspaceId={workspaceId} document={draft.structuredDocument} variables={variables} previewMode={previewMode} messageSettings={{ subject: draft.subject, preheader: draft.preheader, plainText: draft.plainText, category: null, notes: "", templateType: "campaign_email", useCase: "", tags: "" }} onMessageSettingsChange={patch => update({ subject: patch.subject ?? draft.subject, preheader: patch.preheader ?? draft.preheader, plainText: patch.plainText ?? draft.plainText, ...(patch.plainText !== undefined ? { plainTextMode: "manual" as const } : {}) })} onChange={structuredDocument => change({ ...draft, structuredDocument })} defaultInspector={<CampaignOverviewInspector draft={draft} sender={selectedSender} issues={issues} onOpenSettings={() => setActivePanel("settings")} onOpenPreview={() => setActivePanel("preview")} onRunPreflight={() => void runPreflight()} />} />}
     </div>
 
     {blockingIssues.length > 0 && activePanel !== "preflight" && <button type="button" className="campaign-preflight-toast" onClick={() => setActivePanel("preflight")}><span>{blockingIssues.length}</span><div><strong>Preflight needs attention</strong><small>Open the report to resolve blocking issues.</small></div></button>}
 
     {activePanel && <div className="campaign-drawer-backdrop" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) setActivePanel(null); }}><aside className="campaign-drawer" role="dialog" aria-modal="true" aria-labelledby="campaign-drawer-title">
-      <header><div><span>Campaign email</span><h2 id="campaign-drawer-title">{activePanel === "settings" ? "Settings" : activePanel === "preview" ? "Recipient preview" : activePanel === "preflight" ? "Preflight report" : "Versions and usage"}</h2></div><button type="button" aria-label="Close panel" onClick={() => setActivePanel(null)}>×</button></header>
+      <header><div><span>Campaign email</span><h2 id="campaign-drawer-title">{activePanel === "settings" ? "Settings" : activePanel === "footer" ? "Required footer" : activePanel === "preview" ? "Recipient preview" : activePanel === "preflight" ? "Preflight report" : "Versions and usage"}</h2></div><button type="button" aria-label="Close panel" onClick={() => setActivePanel(null)}>×</button></header>
       {activePanel === "settings" && <div className="campaign-drawer-content">
-        <section className="campaign-settings-section"><h3>Inbox details</h3><label>Subject line<input value={draft.subject} maxLength={200} placeholder="Write a subject that earns the open" onChange={event => update({ subject: event.target.value })} /></label><label>Preview text<input value={draft.preheader} maxLength={200} placeholder="Support the subject with more context" onChange={event => update({ preheader: event.target.value })} /></label></section>
+        <section className="campaign-settings-section"><h3>Inbox details</h3>
+          <PersonalizedInboxField label="Subject line" value={draft.subject} placeholder="Write a subject that earns the open" variables={inboxPersonalizationVariables(variables)} onChange={subject => update({ subject })} />
+          <PersonalizedInboxField label="Preview text" value={draft.preheader} placeholder="Support the subject with more context" variables={inboxPersonalizationVariables(variables)} onChange={preheader => update({ preheader })} />
+        </section>
         <section className="campaign-settings-section"><h3>Sender</h3><label>Sender identity<select value={draft.senderIdentityId ?? ""} onChange={event => { const sender = senders.find(item => item.id === event.target.value); update({ senderIdentityId: event.target.value || null, replyTo: draft.replyTo || sender?.replyTo || "" }); }}><option value="">Choose sender</option>{senders.map(sender => <option key={sender.id} value={sender.id}>{sender.fromName} &lt;{sender.fromEmail}&gt;</option>)}</select></label><label>Reply-to address<input type="email" value={draft.replyTo} placeholder="reply@example.com" onChange={event => update({ replyTo: event.target.value })} /></label></section>
         <section className="campaign-settings-section"><h3>Tracking and text</h3><label className="campaign-toggle"><input type="checkbox" checked={draft.trackingEnabled} onChange={event => update({ trackingEnabled: event.target.checked })} /><span><strong>Click tracking</strong><small>Measure link clicks in this campaign.</small></span></label><button type="button" className="campaign-link-button" onClick={() => { setPreviewMode("plain"); setActivePanel(null); }}>Edit plain-text version →</button></section>
+        <section className="campaign-settings-section"><h3>Required footer</h3><p>Adjust your logo, social links, and physical business address. Unsubscribe stays included.</p><button type="button" className="campaign-link-button" onClick={() => setActivePanel("footer")}>Customize footer →</button></section>
         <section className="campaign-settings-section"><h3>Reuse this email</h3><p>Save the current campaign draft as a workspace template.</p><label>Template name<input value={templateName} placeholder="Reusable template name" maxLength={160} onChange={event => setTemplateName(event.target.value)} /></label><button type="button" className="premium-button premium-button-secondary campaign-full-button" disabled={!templateName.trim() || saving} onClick={() => void saveAsTemplate()}>Save as template</button></section>
       </div>}
+      {activePanel === "footer" && <div className="campaign-drawer-content"><FooterInspector block={footerBlock} workspaceId={workspaceId} onChange={next => update({ structuredDocument: { schemaVersion: 1, blocks: [...draft.structuredDocument.blocks.filter(block => block.type !== "compliance_footer"), next] } })} /></div>}
       {activePanel === "preview" && <div className="campaign-drawer-content"><section className="campaign-settings-section"><h3>Preview as a recipient</h3><p>Variables are rendered using the selected workspace profile.</p><label>Search profiles<input placeholder="Search name or email" value={profileQuery} onChange={event => void searchProfiles(event.target.value)} /></label>{profiles.length > 0 && <div className="campaign-profile-results">{profiles.map(profile => <button type="button" key={profile.id} onClick={() => { setProfileId(profile.id); setProfileQuery(`${profileName(profile)} · ${profile.originalEmail}`); setProfiles([]); setPreview(null); }}>{profileName(profile)}<small>{profile.originalEmail}</small></button>)}</div>}<button type="button" className="premium-button premium-button-primary campaign-full-button" disabled={!profileId || saving} onClick={() => void renderPreview()}>Render personalized preview</button></section>{preview ? <section className="campaign-preview-result"><div className="campaign-preview-result-head"><strong>Rendered email</strong><button type="button" onClick={() => setPreviewMode("plain")}>Open plain text</button></div><iframe title="Rendered campaign email preview" sandbox="" srcDoc={preview.html} /></section> : <div className="campaign-drawer-empty"><span>✦</span><strong>No rendered preview yet</strong><p>Select a profile and render the exact email that recipient would receive.</p></div>}</div>}
       {activePanel === "preflight" && <div className="campaign-drawer-content"><div className={`campaign-preflight-summary ${blockingIssues.length ? "blocking" : warningIssues.length ? "warning" : "passed"}`}><span>{blockingIssues.length ? "!" : "✓"}</span><div><strong>{blockingIssues.length ? `${blockingIssues.length} blocking issue${blockingIssues.length === 1 ? "" : "s"}` : warningIssues.length ? "Passed with warnings" : "Ready to publish"}</strong><p>{blockingIssues.length ? "Resolve the required items below before publishing." : "The campaign email passed its required checks."}</p></div></div>{issues.length ? <div className="campaign-issue-list">{issues.map(issue => <article key={`${issue.code}:${issue.path}`}><span className={issue.severity}>{issue.severity}</span><div><strong>{issue.title ?? issue.code.replaceAll("_", " ")}</strong><p>{issue.message}</p></div></article>)}</div> : <div className="campaign-drawer-empty"><span>✓</span><strong>No issues found</strong><p>Run preflight again after making substantial content or sender changes.</p></div>}<button type="button" className="premium-button premium-button-secondary campaign-full-button" disabled={saving} onClick={() => void runPreflight()}>Run preflight again</button></div>}
       {activePanel === "history" && <div className="campaign-drawer-content"><section className="campaign-settings-section"><h3>Immutable versions</h3>{versions.length ? <div className="campaign-version-list">{versions.slice().reverse().map(version => <article key={version.id}><span>v{version.versionNumber}</span><div><strong>Published version</strong><small>{new Date(version.publishedAt).toLocaleString()}</small></div></article>)}</div> : <div className="campaign-inline-empty">No published versions yet.</div>}</section><section className="campaign-settings-section"><h3>Flow usage</h3>{dependencies.length ? <div className="campaign-dependency-list">{dependencies.map(dependency => <p key={dependency.id}><strong>Flow {dependency.flowId}</strong><span>Node {dependency.nodeId}</span></p>)}</div> : <div className="campaign-inline-empty">This email is not used by a published flow.</div>}</section></div>}
     </aside></div>}
   </section>;
+}
+
+function PersonalizedInboxField({ label, value, placeholder, variables, onChange }: {
+  label: string;
+  value: string;
+  placeholder: string;
+  variables: PersonalizationVariable[];
+  onChange: (value: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const selection = useRef<{ start: number; end: number } | null>(null);
+  const [error, setError] = useState("");
+  const rememberSelection = () => {
+    const input = inputRef.current;
+    if (input) selection.current = { start: input.selectionStart ?? value.length, end: input.selectionEnd ?? value.length };
+  };
+  const insert = (variable: PersonalizationVariable) => {
+    const token = personalizationToken(variable);
+    const range = selection.current ?? { start: value.length, end: value.length };
+    const start = Math.min(range.start, value.length);
+    const end = Math.min(range.end, value.length);
+    const next = `${value.slice(0, start)}${token}${value.slice(end)}`;
+    if (next.length > 200) {
+      setError("Maximum 200 characters. Select text to replace or shorten this field.");
+      return;
+    }
+    onChange(next);
+    setError("");
+    const caret = start + token.length;
+    selection.current = { start: caret, end: caret };
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(caret, caret); });
+  };
+  return <div className="campaign-personalized-field">
+    <label>{label}<input ref={inputRef} value={value} maxLength={200} placeholder={placeholder} onChange={event => { onChange(event.target.value); setError(""); }} onClick={rememberSelection} onKeyUp={rememberSelection} onSelect={rememberSelection} /></label>
+    <PersonalizationPicker variables={variables} onInsert={insert} />
+    {error && <small className="campaign-placeholder-error" role="alert">{error}</small>}
+  </div>;
 }
 
 function CampaignOverviewInspector({ draft, sender, issues, onOpenSettings, onOpenPreview, onRunPreflight }: { draft: EmailDraft; sender: Sender | null; issues: PreflightIssue[]; onOpenSettings: () => void; onOpenPreview: () => void; onRunPreflight: () => void }) {

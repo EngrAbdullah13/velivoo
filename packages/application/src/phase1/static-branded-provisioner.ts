@@ -755,6 +755,7 @@ export class StaticBrandedProvisioner {
       workspaceId: domain.workspaceId,
       domain: root,
       rootDomain: root,
+      sendingPurpose: domain.sendingPurpose ?? null,
       infraDomain: domain.delegatedSubdomain ?? infraDomain(root),
       sendingDomain: root,
       mailFromDomain: domain.mailFromDomain ?? staticBrandedMailFromDomain(root),

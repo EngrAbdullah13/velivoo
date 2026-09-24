@@ -16,7 +16,8 @@
     "dev:all": "node --env-file=.env --import tsx apps/api/src/dev-all.ts",
     "dev:stack": "node --env-file=.env --import tsx apps/api/src/dev-stack.ts",
     "dev:stop": "node --import tsx apps/api/src/dev-stop.ts",
-    "start": "npm run dev:api",
+    "start": "node scripts/heroku-start.mjs",
+    "heroku-postbuild": "npm run db:generate && npm run build && npm run web:build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/tests/*.test.js",
@@ -30,7 +31,6 @@
   },
   "devDependencies": {
     "@types/node": "22.0.0",
-    "prisma": "6.0.0",
     "tsx": "4.23.12",
     "typescript": "5.8.3"
   },
@@ -44,6 +44,7 @@
     "bullmq": "6.1.2",
     "ioredis": "6.0.0",
     "mailauth": "4.13.3",
+    "prisma": "6.0.0",
     "tldts": "^7.4.11"
   },
   "engines": {

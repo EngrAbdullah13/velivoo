@@ -38,7 +38,17 @@ export interface SocialBlock { id:string; type:"social"; links:Array<{label:stri
 export interface ColumnsBlock { id:string; type:"columns"; columns:Array<{id:string;blocks:ContentBlock[]}>; spacing?:EmailBlockSpacing }
 export interface CustomHtmlBlock { id:string; type:"custom_html"; html:string; label?:string; needsReview?:boolean; spacing?:EmailBlockSpacing }
 export type ContentBlock=HeadingBlock|TextBlock|HeaderBlock|FooterBlock|ImageBlock|ButtonBlock|DividerBlock|SpacerBlock|SocialBlock|ColumnsBlock|CustomHtmlBlock;
-export interface ComplianceFooterBlock { id:string; type:"compliance_footer"; locked:true }
+export interface ComplianceFooterBlock {
+  id:string;
+  type:"compliance_footer";
+  locked:true;
+  logoUrl?:string;
+  logoWidth?:number;
+  logoAlign?:EmailAlignment;
+  socialLinks?:Array<{platform:string;url:string;iconUrl?:string}>;
+  addressMode?:"workspace"|"custom";
+  customAddress?:string;
+}
 export type StructuredBlock=ContentBlock|ComplianceFooterBlock;
 
 export interface StructuredEmailDocument {
@@ -125,10 +135,11 @@ export function defaultStructuredDocument(): StructuredEmailDocument {
 }
 
 export function ensureComplianceFooter(document: StructuredEmailDocument): StructuredEmailDocument {
-  const blocks = document.blocks.filter((b, index, all) => b.type !== "compliance_footer" || index === all.findIndex((x) => x.type === "compliance_footer"));
-  const footer = blocks.find((b) => b.type === "compliance_footer");
-  if (!footer) blocks.push({ id: "compliance", type: "compliance_footer", locked: true });
-  return { schemaVersion: 1, blocks: blocks.map((b) => b.type === "compliance_footer" ? { ...b, locked: true } : b) };
+  const footer = document.blocks.find((block): block is ComplianceFooterBlock => block.type === "compliance_footer");
+  return { schemaVersion: 1, blocks: [
+    ...document.blocks.filter((block): block is ContentBlock => block.type !== "compliance_footer"),
+    footer ? { ...footer, locked: true } : { id: "compliance", type: "compliance_footer", locked: true },
+  ] };
 }
 
 const alignments = new Set(["left", "center", "right"]);
@@ -148,6 +159,14 @@ export function validateStructuredDocument(document: StructuredEmailDocument): P
     if (block.type === "spacer" && (!Number.isInteger(block.height) || block.height < 0 || block.height > 120)) issues.push({ code: "SPACER_HEIGHT_INVALID", severity: "blocking", path: `${path}.height`, blockId: block.id, field: "height", message: "Spacer height must be a whole number between 0 and 120.", title: "Invalid spacer" });
     if (block.type === "image" && block.width !== undefined && (!Number.isInteger(block.width) || block.width < 1 || block.width > 1200)) issues.push({ code: "IMAGE_WIDTH_INVALID", severity: "blocking", path: `${path}.width`, blockId: block.id, field: "width", message: "Image width must be between 1 and 1200 pixels.", title: "Invalid image width" });
     if (block.type === "image" && block.borderRadius !== undefined && (!Number.isInteger(block.borderRadius) || block.borderRadius < 0 || block.borderRadius > 80)) issues.push({ code: "IMAGE_RADIUS_INVALID", severity: "blocking", path: `${path}.borderRadius`, blockId: block.id, field: "borderRadius", message: "Image border radius must be between 0 and 80 pixels.", title: "Invalid image radius" });
+    if (block.type === "compliance_footer") {
+      if (block.logoUrl && !/^https:\/\/[^\s]+$/i.test(block.logoUrl)) issues.push({ code: "FOOTER_LOGO_URL_INVALID", severity: "blocking", path: `${path}.logoUrl`, blockId: block.id, message: "Footer logo must use a public HTTPS image URL.", title: "Invalid footer logo" });
+      if (block.logoWidth !== undefined && (!Number.isInteger(block.logoWidth) || block.logoWidth < 40 || block.logoWidth > 240)) issues.push({ code: "FOOTER_LOGO_SIZE_INVALID", severity: "blocking", path: `${path}.logoWidth`, blockId: block.id, message: "Footer logo width must be between 40 and 240 pixels.", title: "Invalid footer logo size" });
+      if (block.logoAlign !== undefined && !alignments.has(block.logoAlign)) issues.push({ code: "FOOTER_LOGO_ALIGN_INVALID", severity: "blocking", path: `${path}.logoAlign`, blockId: block.id, message: "Choose left, center, or right alignment.", title: "Invalid footer alignment" });
+      if (block.addressMode === "custom" && !block.customAddress?.trim()) issues.push({ code: "FOOTER_ADDRESS_REQUIRED", severity: "blocking", path: `${path}.customAddress`, blockId: block.id, message: "Enter a physical mailing address or use the workspace address.", title: "Footer address required" });
+      if (block.customAddress && block.customAddress.length > 500) issues.push({ code: "FOOTER_ADDRESS_TOO_LONG", severity: "blocking", path: `${path}.customAddress`, blockId: block.id, message: "Footer address must be 500 characters or less.", title: "Footer address too long" });
+      if (block.socialLinks && (!Array.isArray(block.socialLinks) || block.socialLinks.length > 8 || block.socialLinks.some(link => !link || !/^[a-zA-Z][a-zA-Z0-9 ]{0,39}$/.test(link.platform) || !/^https:\/\/[^\s]+$/i.test(link.url) || (link.iconUrl !== undefined && !/^https:\/\/[^\s]+$/i.test(link.iconUrl))))) issues.push({ code: "FOOTER_SOCIAL_LINK_INVALID", severity: "blocking", path: `${path}.socialLinks`, blockId: block.id, message: "Add up to eight social profiles with HTTPS destinations and icon images.", title: "Invalid social link" });
+    }
     if ((block.type === "heading" || block.type === "text" || block.type === "header" || block.type === "footer") && block.style) {
       const style = block.style;
       if (style.fontFamily && !allowedFonts.has(style.fontFamily)) issues.push({ code: "FONT_INVALID", severity: "blocking", path: `${path}.style.fontFamily`, blockId: block.id, message: "Choose an approved email-safe font.", title: "Invalid font" });

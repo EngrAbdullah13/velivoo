@@ -13,6 +13,7 @@ const feedbackTarget: Record<NormalizedProviderFeedback["eventType"], MessageSta
   complaint: "complained",
   reject: "failed",
   delay: null,
+  open: null,
 };
 
 /**

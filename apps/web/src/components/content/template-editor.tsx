@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ContentBlock, PreflightIssue, StructuredEmailDocument } from "../../../../../packages/domain/src/phase2/content";
-import { DocumentBuilder, type MessageSettings, type PreviewMode, type TemplateDesignSettings } from "./document-builder";
+import type { ComplianceFooterBlock, ContentBlock, PreflightIssue, StructuredEmailDocument } from "../../../../../packages/domain/src/phase2/content";
+import { DocumentBuilder, FooterInspector, FooterPreview, type MessageSettings, type PreviewMode, type TemplateDesignSettings } from "./document-builder";
 import { PlainTextEditorPanel } from "./inbox-metadata-bar";
 import { phase1Api } from "../../lib/phase1-api";
 import { buildImportedHtmlDocument } from "../../lib/template-document-utils";
@@ -61,9 +61,11 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
   const [issues, setIssues] = useState<PreflightIssue[]>([]);
   const [focusMessageTabKey, setFocusMessageTabKey] = useState(0);
   const [importHtmlOpen, setImportHtmlOpen] = useState(false);
+  const [footerOpen, setFooterOpen] = useState(false);
   const [importHtmlValue, setImportHtmlValue] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingImportedHtml = useRef<string | null>(null);
   const [history, setHistory] = useState<{ past: Template[]; future: Template[] }>({ past: [], future: [] });
 
   const load = useCallback(async () => {
@@ -134,7 +136,7 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
       const saved = await phase1Api<Template>(`/api/v1/workspaces/${workspaceId}/content/templates/${templateId}/content`, {
         method: "PATCH",
         body: JSON.stringify({
-          document: buildImportedHtmlDocument(html),
+          document: buildImportedHtmlDocument(html, current.document),
           subject: current.subject,
           preheader: current.preheader,
           plainText: current.plainText,
@@ -155,6 +157,7 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
   const changeImportedSource = useCallback((html: string) => {
     if (!template) return;
     if (sourceTimer.current) clearTimeout(sourceTimer.current);
+    pendingImportedHtml.current = html;
     setDirty(true);
     setStatus("Unsaved original HTML changes");
     sourceTimer.current = setTimeout(() => void saveImportedSource(template, html), 700);
@@ -224,26 +227,48 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
     }
   };
 
-  const approve = async () => {
-    try {
-      setSaving(true);
-      await phase1Api(`/api/v1/workspaces/${workspaceId}/content/templates/${templateId}/approve`, { method: "POST" });
-      setStatus("Approved immutable template version.");
-      await load();
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "Approval failed.");
-    } finally {
-      setSaving(false);
-    }
-  };
   const createCampaign = async () => {
-    if (!template || !versions.length) return;
+    if (!template) return;
+    if (timer.current) clearTimeout(timer.current);
+    if (sourceTimer.current) clearTimeout(sourceTimer.current);
     try {
       setSaving(true);
-      const email = await phase1Api<{ id: string }>(`/api/v1/workspaces/${workspaceId}/content/templates/${template.id}/create-campaign`, { method: "POST", body: JSON.stringify({ internalName: `${template.name} campaign` }) });
+      setStatus("Preparing campaign…");
+      const importedHtml = pendingImportedHtml.current;
+      const savedContent = await phase1Api<Template>(`/api/v1/workspaces/${workspaceId}/content/templates/${templateId}/content`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          document: importedHtml === null ? template.document : buildImportedHtmlDocument(importedHtml, template.document),
+          subject: template.subject,
+          preheader: template.preheader,
+          plainText: template.plainText,
+          settings: template.settings,
+          ...(importedHtml === null ? {} : { importedHtml }),
+        }),
+      });
+      setTemplate({ ...savedContent, name: template.name, category: template.category });
+      pendingImportedHtml.current = null;
+      const savedMetadata = await phase1Api<Template>(`/api/v1/workspaces/${workspaceId}/content/templates/${templateId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: template.name, category: template.category }),
+      });
+      setTemplate(savedMetadata);
+      setDirty(false);
+      const content = JSON.stringify({ document: savedContent.document, subject: savedContent.subject, preheader: savedContent.preheader, plainText: savedContent.plainText, settings: savedContent.settings });
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
+      const contentHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+      if (versions[0]?.contentHash !== contentHash) {
+        await phase1Api(`/api/v1/workspaces/${workspaceId}/content/templates/${templateId}/approve`, { method: "POST" });
+      }
+      const email = await phase1Api<{ id: string }>(`/api/v1/workspaces/${workspaceId}/content/templates/${template.id}/create-campaign`, { method: "POST", body: JSON.stringify({ internalName: `${template.name.slice(0, 151)} campaign` }) });
       window.location.href = `/w/${workspaceId}/content/emails/${email.id}/edit`;
     } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "Unable to create campaign draft.");
+      const message = reason instanceof Error ? reason.message : "Unable to create campaign draft.";
+      if (message.includes("TEMPLATE_PREFLIGHT_BLOCKED")) {
+        const result = await phase1Api<{ issues: PreflightIssue[] }>(`/api/v1/workspaces/${workspaceId}/content/templates/${templateId}/preflight`, { method: "POST" }).catch(() => null);
+        if (result) setIssues(result.issues);
+        setStatus("Needs attention");
+      } else setStatus(message);
       setSaving(false);
     }
   };
@@ -256,7 +281,7 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
       const saved = await phase1Api<Template>(`/api/v1/workspaces/${workspaceId}/content/templates/${templateId}/content`, {
         method: "PATCH",
         body: JSON.stringify({
-          document: buildImportedHtmlDocument(processed.sanitizedHtml),
+          document: buildImportedHtmlDocument(processed.sanitizedHtml, template.document),
           subject: template.subject || processed.subjectSuggestion,
           preheader: template.preheader || processed.preheaderSuggestion,
           plainText: processed.plainText || template.plainText,
@@ -305,6 +330,19 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
   const saveLabel = saving ? "Autosaving" : dirty ? "Unsaved changes" : status === "Saved" ? "Saved" : status;
   const sourceHtml = template.originalSourceHtml?.trim() || template.sanitizedHtml?.trim() || "";
   const hasImportedSource = Boolean(sourceHtml && (template.templateType === "imported_html" || template.importMethod));
+  const footerBlock: ComplianceFooterBlock = template.document.blocks.find((block): block is ComplianceFooterBlock => block.type === "compliance_footer") ?? { id: "compliance", type: "compliance_footer", locked: true };
+  const updateFooter = (next: ComplianceFooterBlock) => {
+    const updated = { ...template, document: { schemaVersion: 1 as const, blocks: [...template.document.blocks.filter(block => block.type !== "compliance_footer"), next] } };
+    if (!hasImportedSource) { change(updated); return; }
+    if (timer.current) clearTimeout(timer.current);
+    if (sourceTimer.current) clearTimeout(sourceTimer.current);
+    const html = pendingImportedHtml.current ?? sourceHtml;
+    pendingImportedHtml.current = html;
+    setTemplate(updated);
+    setDirty(true);
+    setStatus("Unsaved footer changes");
+    sourceTimer.current = setTimeout(() => void saveImportedSource(updated, html), 700);
+  };
   const openHtmlEditor = (html = sourceHtml) => {
     setImportHtmlValue(html);
     setImportHtmlOpen(true);
@@ -319,7 +357,7 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
           <strong>Design</strong>
         </nav>
         <div className="template-title-row">
-          <input className="template-name-input" aria-label="Template name" value={template.name} maxLength={160}
+          <input className="template-name-input" aria-label="Template name" value={template.name} style={{ width: `calc(${Math.max(2, Math.min(30, template.name.length + 1))}ch + 12px)` }} maxLength={160}
             onChange={event => { setTemplate({ ...template, name: event.target.value }); setDirty(true); }}
             onBlur={() => void saveMetadata()} />
           <span className={`template-save-state ${saving ? "is-saving" : dirty ? "is-dirty" : ""}`} role="status">{saveLabel}</span>
@@ -332,8 +370,10 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
         </div>
       </div>
       <div className="template-top-actions">
-        <button type="button" className="premium-button premium-button-icon" disabled={!history.past.length || saving} title={history.past.length ? "Undo last editor change" : "Nothing to undo"} aria-label="Undo" onClick={undo}>↶</button>
-        <button type="button" className="premium-button premium-button-icon" disabled={!history.future.length || saving} title={history.future.length ? "Redo last editor change" : "Nothing to redo"} aria-label="Redo" onClick={redo}>↷</button>
+        <div className="template-history-actions" aria-label="Editing history">
+          <button type="button" className="premium-button premium-button-icon" disabled={!history.past.length || saving} title={history.past.length ? "Undo last editor change" : "Nothing to undo"} aria-label="Undo" onClick={undo}>↶</button>
+          <button type="button" className="premium-button premium-button-icon" disabled={!history.future.length || saving} title={history.future.length ? "Redo last editor change" : "Nothing to redo"} aria-label="Redo" onClick={redo}>↷</button>
+        </div>
         <button
           type="button"
           className={`premium-button premium-button-secondary message-settings-action${!template.subject.trim() || !template.plainText.trim() ? " needs-attention" : ""}`}
@@ -345,8 +385,8 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
         >
           <span aria-hidden="true">✉</span> Subject &amp; message
         </button>
-        <button type="button" className="premium-button premium-button-secondary" onClick={() => setPreviewMode("desktop")}>Preview</button>
         <button type="button" className="premium-button premium-button-secondary" disabled={saving} onClick={() => void preflight()}>Preflight</button>
+        <button type="button" className="premium-button premium-button-secondary" onClick={() => setFooterOpen(true)}>Footer</button>
         <details className="editor-more-menu">
           <summary className="premium-button premium-button-icon" aria-label="More template actions" title="More template actions">•••</summary>
           <div className="editor-more-popover">
@@ -354,8 +394,7 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
             <button type="button" onClick={() => void exportHtml()}>Export HTML</button>
           </div>
         </details>
-        {hasApprovedVersion && <button type="button" className="premium-button premium-button-secondary" disabled={saving} title="Create an email draft from the latest immutable approved version." onClick={() => void createCampaign()}>Use in campaign</button>}
-        <button type="button" className="premium-button premium-button-primary" disabled={saving} onClick={() => void approve()}>{hasApprovedVersion ? "Publish changes" : "Publish"}</button>
+        <button type="button" className="premium-button premium-button-primary template-campaign-button" disabled={saving} title="Save this template and open a campaign draft" onClick={() => void createCampaign()}>Create campaign</button>
       </div>
     </header>
 
@@ -363,20 +402,21 @@ export function TemplateEditor({ workspaceId, templateId }: { workspaceId: strin
 
     <div className="template-editor-workspace">
       {previewMode === "plain"
-        ? <PlainTextEditorPanel subject={template.subject} preheader={template.preheader} plainText={template.plainText} onMetadataChange={updateMessageSettings} onChange={plainText => updateMessageSettings({ plainText })} />
+        ? <PlainTextEditorPanel subject={template.subject} preheader={template.preheader} plainText={template.plainText} variables={variables} onMetadataChange={updateMessageSettings} onChange={plainText => updateMessageSettings({ plainText })} />
         : template.editorType === "text"
-          ? <SimpleTextEmailPreview templateName={template.name} subject={template.subject} preheader={template.preheader} plainText={template.plainText} previewMode={previewMode} />
+          ? <SimpleTextEmailPreview templateName={template.name} subject={template.subject} preheader={template.preheader} plainText={template.plainText} previewMode={previewMode} footer={footerBlock} workspaceId={workspaceId} onEditFooter={() => setFooterOpen(true)} />
         : hasImportedSource && sourceHtml
-          ? <ImportedHtmlCanvas html={sourceHtml} previewMode={previewMode} onChange={changeImportedSource} onOpenHtmlEditor={openHtmlEditor} />
-          : <DocumentBuilder document={template.document} variables={variables} universalBlocks={universalBlocks} mediaAssets={mediaAssets} previewMode={previewMode} templateSettings={templateDesignSettings(template.settings)} brandColors={[brandKit?.primaryColor, brandKit?.secondaryColor].filter((color): color is string => typeof color === "string")} messageSettings={{ subject: template.subject, preheader: template.preheader, plainText: template.plainText, category: template.category, notes: getTemplateNotes(template.settings), templateType: templateSettingString(template.settings, "templateType"), useCase: templateSettingString(template.settings, "useCase"), tags: templateTags(template.settings) }} onMessageSettingsChange={updateMessageSettings} onTemplateSettingsChange={settings => change({ ...template, settings: { ...(template.settings ?? {}), ...settings } })} onChange={document => change({ ...template, document })} focusMessageTabKey={focusMessageTabKey} />}
+          ? <ImportedHtmlCanvas html={sourceHtml} previewMode={previewMode} onChange={changeImportedSource} onOpenHtmlEditor={openHtmlEditor} footer={footerBlock} workspaceId={workspaceId} onEditFooter={() => setFooterOpen(true)} />
+          : <DocumentBuilder workspaceId={workspaceId} document={template.document} variables={variables} universalBlocks={universalBlocks} mediaAssets={mediaAssets} previewMode={previewMode} templateSettings={templateDesignSettings(template.settings)} brandColors={[brandKit?.primaryColor, brandKit?.secondaryColor].filter((color): color is string => typeof color === "string")} messageSettings={{ subject: template.subject, preheader: template.preheader, plainText: template.plainText, category: template.category, notes: getTemplateNotes(template.settings), templateType: templateSettingString(template.settings, "templateType"), useCase: templateSettingString(template.settings, "useCase"), tags: templateTags(template.settings) }} onMessageSettingsChange={updateMessageSettings} onTemplateSettingsChange={settings => change({ ...template, settings: { ...(template.settings ?? {}), ...settings } })} onChange={document => change({ ...template, document })} focusMessageTabKey={focusMessageTabKey} />}
     </div>
 
     {issues.length > 0 && <section className="preflight-notice" aria-live="polite"><strong>Preflight results</strong>{issues.some(issue => /subject|preview|plain.?text/i.test(issue.message)) && <p className="preflight-hint">Add the <strong>subject line</strong> and <strong>preview text</strong> above the canvas. Add <strong>plain text</strong> in the Plain text tab.</p>}{issues.map(issue => <p key={`${issue.code}:${issue.path}`}><span className={issue.severity}>{issue.severity}</span>{issue.message}</p>)}<button type="button" className="button-secondary" onClick={() => { if (issues.some(issue => /plain.?text/i.test(issue.message))) setPreviewMode("plain"); else setFocusMessageTabKey(key => key + 1); }}>Fix inbox settings</button></section>}
+    {footerOpen && <div className="modal-backdrop" role="presentation"><section className="modal footer-editor-modal" role="dialog" aria-modal="true" aria-label="Required email footer"><header><div><h2>Required footer</h2><p>Applies to this template and campaigns created from it.</p></div><button type="button" className="modal-close" onClick={() => setFooterOpen(false)}>×</button></header><FooterInspector block={footerBlock} workspaceId={workspaceId} onChange={updateFooter} /><footer><button type="button" className="button-primary" onClick={() => setFooterOpen(false)}>Done</button></footer></section></div>}
     {importHtmlOpen && <div className="modal-backdrop" role="presentation"><section className="modal template-form-modal" role="dialog" aria-modal="true" aria-labelledby="editor-import-html-title"><header><div><h2 id="editor-import-html-title">{hasImportedSource ? "Edit template HTML" : "Import HTML"}</h2><p>{hasImportedSource ? "Edit the source while retaining the template’s original layout, styling, and responsive rules." : "Paste exported HTML to replace the current template draft."}</p></div><button type="button" className="modal-close" onClick={() => setImportHtmlOpen(false)}>×</button></header><label>{hasImportedSource ? "Template HTML" : "Paste email HTML"}<textarea rows={12} value={importHtmlValue} onChange={event => setImportHtmlValue(event.target.value)} /></label><footer><button type="button" className="button-secondary" onClick={() => setImportHtmlOpen(false)}>Cancel</button><button type="button" className="button-primary" disabled={!importHtmlValue.trim() || saving} onClick={() => { if (window.confirm(hasImportedSource ? "Save these changes to the template HTML?" : "Replace the current canvas with this imported HTML?")) void applyImportedHtml(); }}>{hasImportedSource ? "Save HTML" : "Import HTML"}</button></footer></section></div>}
   </section>;
 }
 
-function SimpleTextEmailPreview({ templateName, subject, preheader, plainText, previewMode }: { templateName: string; subject: string; preheader: string; plainText: string; previewMode: Exclude<PreviewMode, "plain"> }) {
+function SimpleTextEmailPreview({ templateName, subject, preheader, plainText, previewMode, footer, workspaceId, onEditFooter }: { templateName: string; subject: string; preheader: string; plainText: string; previewMode: Exclude<PreviewMode, "plain">; footer: ComplianceFooterBlock; workspaceId: string; onEditFooter: () => void }) {
   const mobile = previewMode === "mobile";
   const paragraphs = plainText.trim() ? plainText.trim().split(/\n{2,}/) : [];
   return <main className="simple-text-preview-stage" aria-label={`${mobile ? "Mobile" : "Desktop"} email preview`}>
@@ -398,12 +438,7 @@ function SimpleTextEmailPreview({ templateName, subject, preheader, plainText, p
         {paragraphs.length
           ? <div className="simple-text-preview-body">{paragraphs.map((paragraph, index) => <p key={`${index}:${paragraph.slice(0, 16)}`}>{paragraph}</p>)}</div>
           : <div className="simple-text-preview-empty"><span aria-hidden="true">✉</span><strong>Your email body is empty</strong><p>Open Plain text to write the message recipients will read.</p></div>}
-        <div className="simple-text-preview-footer">
-          <span className="simple-text-footer-mark" aria-hidden="true">V</span>
-          <strong>Your business name</strong>
-          <span>Your business address</span>
-          <span className="simple-text-footer-links"><u>Unsubscribe</u><b aria-hidden="true">·</b><u>Manage preferences</u></span>
-        </div>
+        <div className="simple-text-preview-footer"><FooterPreview block={footer} workspaceId={workspaceId} onClick={onEditFooter} /></div>
       </article>
     </div>
   </main>;
@@ -450,7 +485,7 @@ const sourceElementMarkup: Record<SourceElementType, string> = {
   image_text: '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:24px 0;"><tr><td width="50%" valign="top" style="padding:0 12px 0 0;color:#3f3f3f;font:16px/1.5 Arial,Helvetica,sans-serif;"><strong>Image area</strong><br>Use Edit HTML to set the real image URL.</td><td width="50%" valign="top" style="padding:0 0 0 12px;color:#3f3f3f;font:16px/1.5 Arial,Helvetica,sans-serif;"><strong>Supporting copy</strong><br>Add a short product benefit here.</td></tr></table>',
 };
 
-function ImportedHtmlCanvas({ html, previewMode, onChange, onOpenHtmlEditor }: { html: string; previewMode: Exclude<PreviewMode, "plain">; onChange: (html: string) => void; onOpenHtmlEditor: (html?: string) => void }) {
+function ImportedHtmlCanvas({ html, previewMode, onChange, onOpenHtmlEditor, footer, workspaceId, onEditFooter }: { html: string; previewMode: Exclude<PreviewMode, "plain">; onChange: (html: string) => void; onOpenHtmlEditor: (html?: string) => void; footer: ComplianceFooterBlock; workspaceId: string; onEditFooter: () => void }) {
   const frame = useRef<HTMLIFrameElement | null>(null);
   const lastSource = useRef(html);
   const [libraryTab, setLibraryTab] = useState<SourceElementTab>("blocks");
@@ -509,6 +544,7 @@ function ImportedHtmlCanvas({ html, previewMode, onChange, onOpenHtmlEditor }: {
     <div className="imported-html-stage">
       <div className="imported-html-stage-label"><span>Template canvas · click text to edit</span><span>{previewMode === "mobile" ? "390px mobile" : "Desktop editor"}</span></div>
       <iframe ref={frame} title={`Imported HTML ${previewMode} editor`} className={`imported-html-frame ${previewMode}`} sandbox="allow-same-origin" srcDoc={html} onLoad={enableEditing} />
+      <div className={`imported-html-footer-preview ${previewMode}`}><FooterPreview block={footer} workspaceId={workspaceId} onClick={onEditFooter} /></div>
     </div>
   </section>;
 }

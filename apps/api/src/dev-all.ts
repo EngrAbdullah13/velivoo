@@ -63,6 +63,10 @@ async function withRedisClient<T>(url: string, run: (client: import("ioredis").R
   try {
     const { Redis } = await import("ioredis");
     const client = new Redis(url, { maxRetriesPerRequest: 1, connectTimeout: 2000, lazyConnect: true });
+    // Connection failures are handled by this function's null result. Without
+    // an error listener ioredis also writes an unhandled-error stack for an
+    // expected local-development Redis outage.
+    client.on("error", () => undefined);
     await client.connect();
     try {
       return await run(client);

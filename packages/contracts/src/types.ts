@@ -32,7 +32,7 @@ export interface NormalizedProviderFeedback {
   providerEventId: string;
   provider: string;
   providerMessageId: string;
-  eventType: "delivery" | "bounce" | "complaint" | "delay" | "reject";
+  eventType: "delivery" | "bounce" | "complaint" | "delay" | "reject" | "open";
   occurredAt: string;
   rawType?: string;
   metadata?: Record<string, unknown>;

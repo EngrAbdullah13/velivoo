@@ -16,6 +16,7 @@ type Domain = {
   lifecycleState?: string | null;
   readinessStatus?: string;
   readinessReasons?: string[];
+  sendingPurpose?: "marketing" | "transactional" | null;
 };
 
 function isBrandedMode(mode?: Domain["provisioningMode"]) {
@@ -47,9 +48,10 @@ function senderIdentityErrorMessage(cause: unknown, domain?: string) {
     const suffix = domain ? ` @${domain}` : " the domain";
     return `Enter only the part before @ (for example: engr). Do not include${suffix} — it is added automatically.`;
   }
+  if (message.includes("DOMAIN_SENDING_PURPOSE_REQUIRED")) return "Choose Marketing or Transactional in domain setup before creating a sender identity.";
   return message;
 }
-type Identity = { id: string; domainId: string; fromName: string; fromEmail: string; replyTo: string; status: string };
+type Identity = { id: string; domainId: string; fromName: string; fromEmail: string; replyTo: string; purpose: "marketing" | "transactional"; status: string };
 
 export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) {
   const [domains, setDomains] = useState<Domain[]>([]);
@@ -62,9 +64,9 @@ export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const eligibleDomains = useMemo(() => domains.filter((domain) => isBrandedMode(domain.provisioningMode)
+  const eligibleDomains = useMemo(() => domains.filter((domain) => Boolean(domain.sendingPurpose) && (isBrandedMode(domain.provisioningMode)
     ? domain.authenticationStatus === "verified" || String(domain.lifecycleState ?? "").toUpperCase() === "READY"
-    : domain.status === "verified"), [domains]);
+    : domain.status === "verified")), [domains]);
   const selectedDomain = useMemo(() => domains.find((domain) => domain.id === domainId), [domains, domainId]);
   const rootSender = isRootSenderVersion(selectedDomain?.provisioningVersion);
   const fixedDomain = rootSender ? (selectedDomain?.rootDomain ?? selectedDomain?.domain) : (selectedDomain?.sendingDomain ?? selectedDomain?.delegatedSubdomain ?? selectedDomain?.domain ?? "");
@@ -115,9 +117,9 @@ export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) 
     {error && <div role="alert">{error}</div>}
     <div className="dashboard-grid" style={{ marginTop: 0 }}>
       <section className="panel" style={{ padding: 20 }}>
-        <div className="panel-heading"><div><h2>Sender identities</h2><p className="panel-subtitle">From addresses approved for marketing email on verified domains.</p></div><span className="pill pill-neutral">{identities.length} configured</span></div>
-        <div className="table-wrap" style={{ marginTop: 18 }}><table><thead><tr><th>Identity</th><th>Domain</th><th>Reply-to</th><th>Status</th></tr></thead><tbody>
-          {identities.map((identity) => <tr key={identity.id}><td><strong>{identity.fromName}</strong><br /><small>{identity.fromEmail}</small></td><td>{domainName(identity.domainId)}</td><td>{identity.replyTo}</td><td><span className={`pill ${identity.status === "active" ? "pill-success" : "pill-neutral"}`}>{identity.status}</span></td></tr>)}
+        <div className="panel-heading"><div><h2>Sender identities</h2><p className="panel-subtitle">From addresses approved for the selected use case on verified domains.</p></div><span className="pill pill-neutral">{identities.length} configured</span></div>
+        <div className="table-wrap" style={{ marginTop: 18 }}><table><thead><tr><th>Identity</th><th>Domain</th><th>Use case</th><th>Reply-to</th><th>Status</th></tr></thead><tbody>
+          {identities.map((identity) => <tr key={identity.id}><td><strong>{identity.fromName}</strong><br /><small>{identity.fromEmail}</small></td><td>{domainName(identity.domainId)}</td><td><span className="pill pill-neutral">{identity.purpose === "transactional" ? "Transactional" : "Marketing"}</span></td><td>{identity.replyTo}</td><td><span className={`pill ${identity.status === "active" ? "pill-success" : "pill-neutral"}`}>{identity.status}</span></td></tr>)}
         </tbody></table>{!loading && identities.length === 0 && <div className="empty-state"><strong>No sender identities yet.</strong><p>Create one after verifying a sending domain.</p></div>}{loading && <p className="panel-subtitle" style={{ padding: 16 }}>Loading sender identities…</p>}</div>
       </section>
       <section className="panel" style={{ padding: 20 }}>
@@ -130,7 +132,7 @@ export function SenderIdentityManager({ workspaceId }: { workspaceId: string }) 
             : <label>From email<input type="email" value={legacyFromEmail} onChange={(event) => setLegacyFromEmail(event.target.value)} placeholder="hello@your-domain.com" required /></label>}
           <label>Reply-to<input type="email" value={replyTo} onChange={(event) => setReplyTo(event.target.value)} placeholder="support@your-domain.com" required /></label>
           <button className="button-primary" type="submit" disabled={!selectedDomain || !eligibleDomains.length}>Create sender identity</button>
-          {!eligibleDomains.length && <p className="panel-subtitle">Domain authentication is not complete yet. <a className="panel-link" href={`/w/${workspaceId}/deliverability/domains`}>Open domain setup, finish DNS verification, then recheck</a>.</p>}
+          {!eligibleDomains.length && <p className="panel-subtitle">Finish domain verification and choose Marketing or Transactional first. <a className="panel-link" href={`/w/${workspaceId}/deliverability/domains`}>Open domain setup</a>.</p>}
           {message && <p className="panel-subtitle" aria-live="polite">{message}</p>}
         </form>
       </section>

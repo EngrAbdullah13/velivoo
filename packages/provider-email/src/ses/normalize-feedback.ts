@@ -16,6 +16,7 @@ export function normalizeSesSnsEnvelope(envelope: SnsEnvelope): NormalizedProvid
   else if (type === "complaint") { eventType = "complaint"; occurredAt = String(parsed.complaint?.timestamp ?? occurredAt); }
   else if (type === "deliverydelay" || type === "delay") { eventType = "delay"; occurredAt = String(parsed.deliveryDelay?.timestamp ?? occurredAt); }
   else if (type === "reject") { eventType = "reject"; }
+  else if (type === "open") { eventType = "open"; occurredAt = String(parsed.open?.timestamp ?? occurredAt); }
   else return [];
   return [{
     providerEventId: envelope.MessageId || createHash("sha256").update(envelope.Message).digest("hex"),
@@ -30,6 +31,7 @@ export function normalizeSesSnsEnvelope(envelope: SnsEnvelope): NormalizedProvid
       bounceType: parsed.bounce?.bounceType ? String(parsed.bounce.bounceType) : undefined,
       bounceSubType: parsed.bounce?.bounceSubType ? String(parsed.bounce.bounceSubType) : undefined,
       complaintFeedbackType: parsed.complaint?.complaintFeedbackType ? String(parsed.complaint.complaintFeedbackType) : undefined,
+      openIsBotEvent: parsed.open?.isBotEvent ? String(parsed.open.isBotEvent) : undefined,
     },
   }];
 }

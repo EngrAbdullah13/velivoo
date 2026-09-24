@@ -34,3 +34,26 @@
 .template-back-button{min-height:36px;padding:0;color:#52605a;background:transparent;border:0;font-size:12px;font-weight:750}
 .template-back-button:hover:not(:disabled){color:#087d51}
 @media(max-width:620px){.modal.template-choice-modal,.modal.template-import-modal{width:calc(100vw - 24px);max-height:calc(100vh - 24px);padding:20px}.modal.template-choice-modal.template-create-modal{width:calc(100vw - 24px);padding:0}.template-create-modal>header{padding:20px!important}.template-create-modal .template-create-details{padding:18px 20px 0}.template-create-modal .template-create-details>footer{align-items:stretch;flex-direction:column;margin:0 -20px;padding:15px 20px}.template-create-modal .template-create-details>footer>div{display:grid;grid-template-columns:1fr 1fr}.template-back-button{text-align:left}}
+
+/* Make the starting decision about the user's goal, then reveal editor-specific choices. */
+.template-choice-grid-simple{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:22px}
+.template-choice-grid-simple .template-choice-card{align-content:start;min-height:154px;padding:19px;border-color:#dce7e1;border-radius:12px}
+.template-choice-grid-simple .template-choice-card:hover,.template-choice-grid-simple .template-choice-card:focus-visible{border-color:#6ec9a0;box-shadow:0 8px 22px #1a5e3d14}
+.template-choice-grid-simple .template-choice-card strong{color:#182a21;font-size:14px}
+.template-choice-grid-simple .template-choice-card>span:last-child{color:#68786f;font-size:11px;line-height:1.5}
+.template-editor-type-picker{display:grid;grid-template-columns:1fr 1fr;gap:9px;min-width:0;margin:0;padding:0;border:0}
+.template-editor-type-picker legend{grid-column:1/-1;margin-bottom:8px;color:#26332e;font-size:12px;font-weight:750}
+.template-editor-type-picker label{display:grid;grid-template-columns:16px 1fr;column-gap:9px;row-gap:3px;align-content:center;min-height:74px;padding:11px 12px;color:#35453c;border:1px solid #d9e4de;border-radius:9px;cursor:pointer}
+.template-editor-type-picker label.selected{background:#f1faf5;border-color:#65c597;box-shadow:0 0 0 1px #65c597}
+.template-create-modal .template-editor-type-picker input[type="radio"]{grid-row:1/3;width:16px;min-height:16px;margin:1px 0 0;accent-color:#16875c;box-shadow:none}
+.template-editor-type-picker strong{font-size:12px}
+.template-editor-type-picker label span{color:#74827a;font-size:10px;font-weight:500}
+.import-review-guidance{margin:0;color:#617168;font-size:11px;line-height:1.5}
+.import-optional-details,.import-summary{padding:10px 12px;background:#f8fbf9;border:1px solid #e0e9e4;border-radius:8px}
+.import-optional-details summary,.import-summary summary{color:#28704e;font-size:11px;font-weight:750;cursor:pointer}
+.import-optional-details>div{display:grid;gap:12px;padding-top:14px}
+.import-optional-details label{display:grid;gap:6px;color:#384a40;font-size:11px;font-weight:700}
+.import-optional-details input{width:100%}
+.import-summary ul{margin:12px 0 2px;padding-left:18px}
+@media(max-width:900px){.template-choice-grid-simple{grid-template-columns:1fr}.template-choice-grid-simple .template-choice-card{min-height:0}}
+@media(max-width:520px){.template-editor-type-picker{grid-template-columns:1fr}}
